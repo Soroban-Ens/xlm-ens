@@ -9,13 +9,10 @@ pub fn run_auction(network: Network, name: &str, reserve: u64) {
         Network::Mainnet => "mainnet-bidder",
     };
 
-    auction.place_bid(
-        name,
-        Bid {
-            bidder: bidder.into(),
-            amount: reserve,
-        },
-    );
+    auction.create_auction(name, reserve, 0, 100).expect("auction creation should succeed");
+    auction
+        .place_bid(name, Bid::new(bidder, reserve, 1), 1)
+        .expect("bid placement should succeed");
 
     println!("created auction placeholder for {name} with reserve {reserve}");
 }
