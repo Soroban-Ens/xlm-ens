@@ -3,3 +3,6 @@ name = "xlm-ns-bridge"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+
+[dependencies]
+xlm-ns-common = { path = "../../packages/xlm-ns-common" }
