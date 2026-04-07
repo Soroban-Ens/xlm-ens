@@ -1,0 +1,8 @@
+[package]
+name = "xlm-ns-auction"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
