@@ -14,7 +14,7 @@ mod tests {
         let name = String::from_str(&env, "timmy.xlm");
         let address = String::from_str(&env, "GABC");
 
-        client.set_record(&name, &owner, &address, &100).unwrap();
+        client.set_record(&name, &owner, &address, &100);
         client
             .set_text_record(
                 &name,
@@ -22,9 +22,8 @@ mod tests {
                 &String::from_str(&env, "com.twitter"),
                 &String::from_str(&env, "@timmy"),
                 &101,
-            )
-            .unwrap();
-        client.set_primary_name(&address, &owner, &name).unwrap();
+            );
+        client.set_primary_name(&address, &owner, &name);
 
         let record = client.resolve(&name).unwrap();
         assert_eq!(record.address, address);

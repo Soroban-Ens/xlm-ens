@@ -24,11 +24,10 @@ mod tests {
                 &100,
                 &1_000,
                 &2_000,
-            )
-            .unwrap();
-        client.transfer(&name, &owner, &next_owner, &101).unwrap();
+            );
+        client.transfer(&name, &owner, &next_owner, &101);
 
-        let resolved = client.resolve(&name, &101).unwrap();
+        let resolved = client.resolve(&name, &101);
         assert_eq!(resolved.owner, next_owner);
         assert_eq!(client.names_for_owner(&next_owner).len(), 1);
     }

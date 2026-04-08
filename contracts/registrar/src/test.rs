@@ -30,13 +30,11 @@ mod tests {
         let label = String::from_str(&env, "timmy");
         let name = String::from_str(&env, "timmy.xlm");
 
-        let quote = client.quote_registration(&label, &1, &100).unwrap();
-        client.register(&label, &owner, &1, &quote.fee_stroops, &100).unwrap();
+        let quote = client.quote_registration(&label, &1, &100);
+        client.register(&label, &owner, &1, &quote.fee_stroops, &100);
         assert!(!client.is_available(&label, &101));
 
-        client
-            .renew(&name, &owner, &1, &quote.fee_stroops, &200)
-            .unwrap();
+        client.renew(&name, &owner, &1, &quote.fee_stroops, &200);
 
         let record = client.registration(&name).unwrap();
         assert_eq!(record.owner, owner);

@@ -13,9 +13,9 @@ mod tests {
         let base = String::from_str(&env, "base");
         let name = String::from_str(&env, "timmy.xlm");
 
-        client.register_chain(&base).unwrap();
+        client.register_chain(&base);
         let route = client.route(&base).unwrap();
-        let payload = client.build_message(&name, &base).unwrap();
+        let payload = client.build_message(&name, &base);
 
         assert_eq!(route.destination_resolver, String::from_str(&env, "0xbaseResolver"));
         assert!(payload.to_string().contains("timmy.xlm"));

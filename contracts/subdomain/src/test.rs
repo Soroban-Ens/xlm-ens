@@ -15,8 +15,8 @@ mod tests {
         let sub_owner = Address::generate(&env);
         let parent = String::from_str(&env, "timmy.xlm");
 
-        client.register_parent(&parent, &owner).unwrap();
-        client.add_controller(&parent, &owner, &controller).unwrap();
+        client.register_parent(&parent, &owner);
+        client.add_controller(&parent, &owner, &controller);
 
         let fqdn = client
             .create(
@@ -25,8 +25,7 @@ mod tests {
                 &controller,
                 &sub_owner,
                 &100,
-            )
-            .unwrap();
+            );
 
         assert_eq!(fqdn, String::from_str(&env, "pay.timmy.xlm"));
         assert!(client.exists(&fqdn));

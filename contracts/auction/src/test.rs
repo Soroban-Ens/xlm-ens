@@ -14,11 +14,11 @@ mod tests {
         let bob = Address::generate(&env);
         let name = String::from_str(&env, "vip.xlm");
 
-        client.create_auction(&name, &200, &10, &20).unwrap();
-        client.place_bid(&name, &alice, &500, &12).unwrap();
-        client.place_bid(&name, &bob, &300, &13).unwrap();
+        client.create_auction(&name, &200, &10, &20);
+        client.place_bid(&name, &alice, &500, &12);
+        client.place_bid(&name, &bob, &300, &13);
 
-        let settlement = client.settle(&name, &21).unwrap().unwrap();
+        let settlement = client.settle(&name, &21).unwrap();
         assert_eq!(settlement.winner, Some(alice));
         assert_eq!(settlement.clearing_price, 300);
     }

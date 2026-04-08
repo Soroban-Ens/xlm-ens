@@ -16,10 +16,9 @@ mod tests {
         let token_id = String::from_str(&env, "timmy.xlm");
 
         client
-            .mint(&token_id, &owner, &Some(String::from_str(&env, "ipfs://timmy")))
-            .unwrap();
-        client.approve(&token_id, &owner, &approved).unwrap();
-        client.transfer(&token_id, &approved, &new_owner).unwrap();
+            .mint(&token_id, &owner, &Some(String::from_str(&env, "ipfs://timmy")));
+        client.approve(&token_id, &owner, &approved);
+        client.transfer(&token_id, &approved, &new_owner);
 
         assert_eq!(client.owner_of(&token_id), Some(new_owner));
     }
