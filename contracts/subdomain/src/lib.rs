@@ -1,141 +1,142 @@
-pub mod manager;
-pub mod test;
+mod test;
 
-use std::collections::{BTreeSet, HashMap};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec,
+};
+use xlm_ns_common::soroban::{build_subdomain_name, validate_fqdn_soroban};
 
-use manager::build_subdomain;
-use xlm_ns_common::validation::{parse_fqdn, validate_owner};
-use xlm_ns_common::CommonError;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct ParentDomain {
-    pub owner: String,
-    pub controllers: BTreeSet<String>,
+    pub owner: Address,
+    pub controllers: Vec<Address>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct SubdomainRecord {
     pub parent: String,
-    pub owner: String,
+    pub owner: Address,
     pub created_at: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
+#[contracttype]
+enum DataKey {
+    Parent(String),
+    Subdomain(String),
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum SubdomainError {
-    Validation(CommonError),
-    ParentNotFound,
-    AlreadyExists,
-    NotFound,
-    Unauthorized,
+    Validation = 1,
+    ParentNotFound = 2,
+    AlreadyExists = 3,
+    NotFound = 4,
+    Unauthorized = 5,
 }
 
-impl core::fmt::Display for SubdomainError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Validation(error) => write!(f, "{error}"),
-            Self::ParentNotFound => f.write_str("parent domain was not registered for subdomain issuance"),
-            Self::AlreadyExists => f.write_str("subdomain already exists"),
-            Self::NotFound => f.write_str("subdomain was not found"),
-            Self::Unauthorized => f.write_str("caller is not authorized for this parent domain"),
-        }
-    }
-}
+#[contract]
+pub struct SubdomainContract;
 
-impl std::error::Error for SubdomainError {}
-
-impl From<CommonError> for SubdomainError {
-    fn from(value: CommonError) -> Self {
-        Self::Validation(value)
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct SubdomainContract {
-    parents: HashMap<String, ParentDomain>,
-    subdomains: HashMap<String, SubdomainRecord>,
-}
-
+#[contractimpl]
 impl SubdomainContract {
-    pub fn register_parent(&mut self, parent: &str, owner: &str) -> Result<(), SubdomainError> {
-        parse_fqdn(parent)?;
-        validate_owner(owner)?;
-        self.parents.insert(
-            parent.to_string(),
-            ParentDomain {
-                owner: owner.to_string(),
-                controllers: BTreeSet::new(),
-            },
-        );
+    pub fn register_parent(env: Env, parent: String, owner: Address) -> Result<(), SubdomainError> {
+        validate_fqdn_soroban(&parent).map_err(|_| SubdomainError::Validation)?;
+        let record = ParentDomain {
+            owner,
+            controllers: Vec::new(&env),
+        };
+        env.storage().persistent().set(&DataKey::Parent(parent), &record);
         Ok(())
     }
 
     pub fn add_controller(
-        &mut self,
-        parent: &str,
-        caller: &str,
-        controller: &str,
+        env: Env,
+        parent: String,
+        caller: Address,
+        controller: Address,
     ) -> Result<(), SubdomainError> {
-        validate_owner(controller)?;
-        let parent_record = self.parents.get_mut(parent).ok_or(SubdomainError::ParentNotFound)?;
+        let mut parent_record = get_parent(&env, &parent)?;
         if parent_record.owner != caller {
             return Err(SubdomainError::Unauthorized);
         }
-
-        parent_record.controllers.insert(controller.to_string());
+        if !parent_record.controllers.contains(&controller) {
+            parent_record.controllers.push_back(controller);
+            env.storage()
+                .persistent()
+                .set(&DataKey::Parent(parent), &parent_record);
+        }
         Ok(())
     }
 
     pub fn create(
-        &mut self,
-        label: &str,
-        parent: &str,
-        caller: &str,
-        owner: &str,
+        env: Env,
+        label: String,
+        parent: String,
+        caller: Address,
+        owner: Address,
         now_unix: u64,
     ) -> Result<String, SubdomainError> {
-        validate_owner(owner)?;
-        let parent_record = self.parents.get(parent).ok_or(SubdomainError::ParentNotFound)?;
-        if parent_record.owner != caller && !parent_record.controllers.contains(caller) {
+        let parent_record = get_parent(&env, &parent)?;
+        if parent_record.owner != caller && !parent_record.controllers.contains(&caller) {
             return Err(SubdomainError::Unauthorized);
         }
 
-        let fqdn = build_subdomain(label, parent)?;
-        if self.subdomains.contains_key(&fqdn) {
+        let fqdn =
+            build_subdomain_name(&env, &label, &parent).map_err(|_| SubdomainError::Validation)?;
+        let key = DataKey::Subdomain(fqdn.clone());
+        if env.storage().persistent().has(&key) {
             return Err(SubdomainError::AlreadyExists);
         }
 
-        self.subdomains.insert(
-            fqdn.clone(),
-            SubdomainRecord {
-                parent: parent.to_string(),
-                owner: owner.to_string(),
-                created_at: now_unix,
-            },
-        );
+        let record = SubdomainRecord {
+            parent,
+            owner,
+            created_at: now_unix,
+        };
+        env.storage().persistent().set(&key, &record);
         Ok(fqdn)
     }
 
     pub fn transfer(
-        &mut self,
-        fqdn: &str,
-        caller: &str,
-        new_owner: &str,
+        env: Env,
+        fqdn: String,
+        caller: Address,
+        new_owner: Address,
     ) -> Result<(), SubdomainError> {
-        validate_owner(new_owner)?;
-        let record = self.subdomains.get_mut(fqdn).ok_or(SubdomainError::NotFound)?;
+        let mut record = get_subdomain(&env, &fqdn)?;
         if record.owner != caller {
             return Err(SubdomainError::Unauthorized);
         }
-
-        record.owner = new_owner.to_string();
+        record.owner = new_owner;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Subdomain(fqdn), &record);
         Ok(())
     }
 
-    pub fn exists(&self, fqdn: &str) -> bool {
-        self.subdomains.contains_key(fqdn)
+    pub fn exists(env: Env, fqdn: String) -> bool {
+        env.storage().persistent().has(&DataKey::Subdomain(fqdn))
     }
 
-    pub fn record(&self, fqdn: &str) -> Option<&SubdomainRecord> {
-        self.subdomains.get(fqdn)
+    pub fn record(env: Env, fqdn: String) -> Option<SubdomainRecord> {
+        env.storage().persistent().get(&DataKey::Subdomain(fqdn))
     }
+}
+
+fn get_parent(env: &Env, parent: &String) -> Result<ParentDomain, SubdomainError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Parent(parent.clone()))
+        .ok_or(SubdomainError::ParentNotFound)
+}
+
+fn get_subdomain(env: &Env, fqdn: &String) -> Result<SubdomainRecord, SubdomainError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Subdomain(fqdn.clone()))
+        .ok_or(SubdomainError::NotFound)
 }

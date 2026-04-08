@@ -1,22 +1,23 @@
 #[cfg(test)]
 mod tests {
-    use crate::{build_gmp_message, target_for_chain, BridgeContract};
+    use soroban_sdk::{Env, String};
+
+    use crate::{BridgeContract, BridgeContractClient};
 
     #[test]
-    fn builds_axelar_payloads() {
-        let payload = build_gmp_message("timmy.xlm", "base", "0xbaseResolver");
-        assert!(payload.contains("timmy.xlm"));
-        let target = target_for_chain("base").unwrap();
-        assert_eq!(target.resolver, "0xbaseResolver");
-    }
+    fn stores_bridge_routes_in_contract_storage() {
+        let env = Env::default();
+        let contract_id = env.register(BridgeContract, ());
+        let client = BridgeContractClient::new(&env, &contract_id);
 
-    #[test]
-    fn registers_supported_routes() {
-        let mut bridge = BridgeContract::default();
-        bridge.register_chain("base").unwrap();
+        let base = String::from_str(&env, "base");
+        let name = String::from_str(&env, "timmy.xlm");
 
-        let route = bridge.route("base").unwrap();
-        assert_eq!(route.destination_resolver, "0xbaseResolver");
-        assert!(bridge.build_message("timmy.xlm", "base").is_ok());
+        client.register_chain(&base).unwrap();
+        let route = client.route(&base).unwrap();
+        let payload = client.build_message(&name, &base).unwrap();
+
+        assert_eq!(route.destination_resolver, String::from_str(&env, "0xbaseResolver"));
+        assert!(payload.to_string().contains("timmy.xlm"));
     }
 }

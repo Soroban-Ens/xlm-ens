@@ -1,5 +1,6 @@
 pub mod constants;
 pub mod errors;
+pub mod soroban;
 pub mod types;
 pub mod validation;
 

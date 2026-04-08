@@ -1,21 +1,33 @@
 #[cfg(test)]
 mod tests {
-    use crate::ResolverContract;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    use crate::{ResolverContract, ResolverContractClient};
 
     #[test]
-    fn stores_forward_and_reverse_records() {
-        let mut resolver = ResolverContract::default();
-        resolver.set_record("timmy.xlm", "alice", "GABC", 100).unwrap();
-        resolver
-            .set_text_record("timmy.xlm", "alice", "com.twitter", "@timmy", 101)
-            .unwrap();
-        resolver.set_primary_name("GABC", "alice", "timmy.xlm").unwrap();
+    fn persists_forward_and_reverse_resolution_records() {
+        let env = Env::default();
+        let contract_id = env.register(ResolverContract, ());
+        let client = ResolverContractClient::new(&env, &contract_id);
 
-        let resolved = resolver.resolve("timmy.xlm").unwrap();
-        assert_eq!(resolved.address, "GABC");
-        assert_eq!(resolved.text_records.get("com.twitter"), Some(&"@timmy".to_string()));
-        assert_eq!(resolver.reverse("GABC"), Some("timmy.xlm"));
-        assert!(resolver.has_forward_record("timmy.xlm"));
-        assert!(resolver.has_reverse_record("GABC"));
+        let owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+        let address = String::from_str(&env, "GABC");
+
+        client.set_record(&name, &owner, &address, &100).unwrap();
+        client
+            .set_text_record(
+                &name,
+                &owner,
+                &String::from_str(&env, "com.twitter"),
+                &String::from_str(&env, "@timmy"),
+                &101,
+            )
+            .unwrap();
+        client.set_primary_name(&address, &owner, &name).unwrap();
+
+        let record = client.resolve(&name).unwrap();
+        assert_eq!(record.address, address);
+        assert_eq!(client.reverse(&String::from_str(&env, "GABC")), Some(name));
     }
 }

@@ -1,15 +1,30 @@
-pub mod bid;
-pub mod settle;
-pub mod test;
+mod test;
 
-use std::collections::HashMap;
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec,
+};
+use xlm_ns_common::soroban::validate_fqdn_soroban;
 
-use bid::Bid;
-use settle::Settlement;
-use xlm_ns_common::validation::parse_fqdn;
-use xlm_ns_common::CommonError;
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct Bid {
+    pub bidder: Address,
+    pub amount: u64,
+    pub placed_at: u64,
+}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct Settlement {
+    pub winner: Option<Address>,
+    pub clearing_price: u64,
+    pub winning_bid: u64,
+    pub settled_at: u64,
+    pub sold: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct Auction {
     pub name: String,
     pub reserve_price: u64,
@@ -19,80 +34,67 @@ pub struct Auction {
     pub settlement: Option<Settlement>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
+#[contracttype]
+enum DataKey {
+    Auction(String),
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum AuctionError {
-    Validation(CommonError),
-    AlreadyExists,
-    NotFound,
-    AuctionClosed,
-    AuctionNotStarted,
-    AuctionNotEnded,
-    AlreadySettled,
-    InvalidBid,
+    Validation = 1,
+    AlreadyExists = 2,
+    NotFound = 3,
+    AuctionClosed = 4,
+    AuctionNotStarted = 5,
+    AuctionNotEnded = 6,
+    AlreadySettled = 7,
+    InvalidBid = 8,
 }
 
-impl core::fmt::Display for AuctionError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Validation(error) => write!(f, "{error}"),
-            Self::AlreadyExists => f.write_str("auction already exists"),
-            Self::NotFound => f.write_str("auction was not found"),
-            Self::AuctionClosed => f.write_str("auction is already closed"),
-            Self::AuctionNotStarted => f.write_str("auction has not started"),
-            Self::AuctionNotEnded => f.write_str("auction has not ended"),
-            Self::AlreadySettled => f.write_str("auction is already settled"),
-            Self::InvalidBid => f.write_str("bid is invalid"),
-        }
-    }
-}
+#[contract]
+pub struct AuctionContract;
 
-impl std::error::Error for AuctionError {}
-
-impl From<CommonError> for AuctionError {
-    fn from(value: CommonError) -> Self {
-        Self::Validation(value)
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct AuctionContract {
-    auctions: HashMap<String, Auction>,
-}
-
+#[contractimpl]
 impl AuctionContract {
     pub fn create_auction(
-        &mut self,
-        name: impl Into<String>,
+        env: Env,
+        name: String,
         reserve_price: u64,
         starts_at: u64,
         ends_at: u64,
     ) -> Result<(), AuctionError> {
-        let name = name.into();
-        parse_fqdn(&name)?;
-        if self.auctions.contains_key(&name) {
+        validate_fqdn_soroban(&name).map_err(|_| AuctionError::Validation)?;
+        let key = DataKey::Auction(name.clone());
+        if env.storage().persistent().has(&key) {
             return Err(AuctionError::AlreadyExists);
         }
 
-        self.auctions.insert(
-            name.clone(),
-            Auction {
-                name,
-                reserve_price,
-                starts_at,
-                ends_at,
-                bids: Vec::new(),
-                settlement: None,
-            },
-        );
+        let auction = Auction {
+            name: name.clone(),
+            reserve_price,
+            starts_at,
+            ends_at,
+            bids: Vec::new(&env),
+            settlement: None,
+        };
+        env.storage().persistent().set(&key, &auction);
         Ok(())
     }
 
-    pub fn place_bid(&mut self, name: &str, bid: Bid, now_unix: u64) -> Result<(), AuctionError> {
-        if !bid.is_valid() {
+    pub fn place_bid(
+        env: Env,
+        name: String,
+        bidder: Address,
+        amount: u64,
+        now_unix: u64,
+    ) -> Result<(), AuctionError> {
+        if amount == 0 {
             return Err(AuctionError::InvalidBid);
         }
-
-        let auction = self.auctions.get_mut(name).ok_or(AuctionError::NotFound)?;
+        let mut auction = get_auction(&env, &name)?;
         if auction.settlement.is_some() {
             return Err(AuctionError::AlreadySettled);
         }
@@ -103,12 +105,17 @@ impl AuctionContract {
             return Err(AuctionError::AuctionClosed);
         }
 
-        auction.bids.push(bid);
+        auction.bids.push_back(Bid {
+            bidder,
+            amount,
+            placed_at: now_unix,
+        });
+        put_auction(&env, &name, &auction);
         Ok(())
     }
 
-    pub fn settle(&mut self, name: &str, now_unix: u64) -> Result<Option<&Settlement>, AuctionError> {
-        let auction = self.auctions.get_mut(name).ok_or(AuctionError::NotFound)?;
+    pub fn settle(env: Env, name: String, now_unix: u64) -> Result<Option<Settlement>, AuctionError> {
+        let mut auction = get_auction(&env, &name)?;
         if auction.settlement.is_some() {
             return Err(AuctionError::AlreadySettled);
         }
@@ -116,16 +123,71 @@ impl AuctionContract {
             return Err(AuctionError::AuctionNotEnded);
         }
 
-        auction.settlement = settle::settle_vickrey(
-            &auction.bids,
-            auction.reserve_price,
-            auction.ends_at,
-            now_unix,
-        );
-        Ok(auction.settlement.as_ref())
+        let settlement = settle_vickrey(&auction, now_unix);
+        auction.settlement = settlement.clone();
+        put_auction(&env, &name, &auction);
+        Ok(settlement)
     }
 
-    pub fn auction(&self, name: &str) -> Option<&Auction> {
-        self.auctions.get(name)
+    pub fn auction(env: Env, name: String) -> Option<Auction> {
+        env.storage().persistent().get(&DataKey::Auction(name))
     }
+}
+
+fn get_auction(env: &Env, name: &String) -> Result<Auction, AuctionError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Auction(name.clone()))
+        .ok_or(AuctionError::NotFound)
+}
+
+fn put_auction(env: &Env, name: &String, auction: &Auction) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Auction(name.clone()), auction);
+}
+
+fn settle_vickrey(auction: &Auction, settled_at: u64) -> Option<Settlement> {
+    if auction.bids.is_empty() {
+        return None;
+    }
+
+    let mut highest: Option<Bid> = None;
+    let mut second_highest = 0u64;
+
+    for bid in auction.bids.iter() {
+        if highest
+            .as_ref()
+            .map(|current| bid.amount > current.amount)
+            .unwrap_or(true)
+        {
+            second_highest = highest.as_ref().map(|current| current.amount).unwrap_or(0);
+            highest = Some(bid);
+        } else if bid.amount > second_highest {
+            second_highest = bid.amount;
+        }
+    }
+
+    let winning_bid = highest.as_ref()?.amount;
+    if winning_bid < auction.reserve_price {
+        return Some(Settlement {
+            winner: None,
+            clearing_price: 0,
+            winning_bid,
+            settled_at,
+            sold: false,
+        });
+    }
+
+    Some(Settlement {
+        winner: highest.map(|bid| bid.bidder),
+        clearing_price: if second_highest > auction.reserve_price {
+            second_highest
+        } else {
+            auction.reserve_price
+        },
+        winning_bid,
+        settled_at,
+        sold: true,
+    })
 }

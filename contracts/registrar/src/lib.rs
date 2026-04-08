@@ -1,193 +1,222 @@
 pub mod expiry;
 pub mod pricing;
-pub mod test;
+mod test;
 
-use core::fmt;
-use std::collections::{HashMap, HashSet};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, Address, Env, String,
+};
+use xlm_ns_common::soroban::{
+    build_xlm_name, extract_label_soroban, validate_label_soroban,
+    validate_registration_years_soroban,
+};
+use xlm_ns_common::GRACE_PERIOD_SECONDS;
 
 use expiry::{expiry_from_now, within_grace_period};
-use pricing::price_for_label;
-use xlm_ns_common::validation::{parse_fqdn, validate_label, validate_owner, validate_registration_years};
-use xlm_ns_common::{CommonError, NameRecord, GRACE_PERIOD_SECONDS};
+use pricing::price_for_label_length;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct RegistrationQuote {
     pub fee_stroops: u64,
     pub expiry_unix: u64,
     pub grace_period_ends_at: u64,
 }
 
-#[derive(Debug)]
-pub enum RegistrarError {
-    InsufficientFee,
-    NotFound,
-    NotRenewable,
-    AlreadyRegistered,
-    Reserved,
-    Unauthorized,
-    Validation(CommonError),
-}
-
-impl fmt::Display for RegistrarError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InsufficientFee => f.write_str("fee paid is below required amount"),
-            Self::NotFound => f.write_str("registration was not found"),
-            Self::NotRenewable => f.write_str("registration is no longer eligible for renewal"),
-            Self::AlreadyRegistered => f.write_str("name is already registered"),
-            Self::Reserved => f.write_str("label is reserved and cannot be directly registered"),
-            Self::Unauthorized => f.write_str("caller is not authorized for this registration"),
-            Self::Validation(error) => write!(f, "{error}"),
-        }
-    }
-}
-
-impl std::error::Error for RegistrarError {}
-
-impl From<CommonError> for RegistrarError {
-    fn from(value: CommonError) -> Self {
-        Self::Validation(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct RegistrationRecord {
-    pub record: NameRecord,
+    pub name: String,
+    pub owner: Address,
+    pub registered_at: u64,
+    pub expires_at: u64,
+    pub grace_period_ends_at: u64,
     pub fee_paid: u64,
     pub renewed_at: u64,
 }
 
-#[derive(Debug, Default)]
-pub struct RegistrarContract {
-    registrations: HashMap<String, RegistrationRecord>,
-    reserved_labels: HashSet<String>,
-    treasury_balance: u64,
+#[derive(Clone)]
+#[contracttype]
+enum DataKey {
+    Registration(String),
+    Reserved(String),
+    Treasury,
 }
 
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum RegistrarError {
+    InsufficientFee = 1,
+    NotFound = 2,
+    NotRenewable = 3,
+    AlreadyRegistered = 4,
+    Reserved = 5,
+    Unauthorized = 6,
+    Validation = 7,
+}
+
+#[contract]
+pub struct RegistrarContract;
+
+#[contractimpl]
 impl RegistrarContract {
-    pub fn reserve_label(&mut self, label: &str) -> Result<(), RegistrarError> {
-        validate_label(label)?;
-        self.reserved_labels.insert(label.to_string());
+    pub fn reserve_label(env: Env, label: String) -> Result<(), RegistrarError> {
+        validate_label_soroban(&label).map_err(|_| RegistrarError::Validation)?;
+        env.storage().persistent().set(&DataKey::Reserved(label), &true);
         Ok(())
     }
 
     pub fn quote_registration(
-        &self,
-        label: &str,
+        env: Env,
+        label: String,
         years: u64,
         now_unix: u64,
     ) -> Result<RegistrationQuote, RegistrarError> {
-        validate_label(label)?;
-        validate_registration_years(years)?;
-        Ok(quote_registration(label, years, now_unix))
+        validate_label_soroban(&label).map_err(|_| RegistrarError::Validation)?;
+        validate_registration_years_soroban(years).map_err(|_| RegistrarError::Validation)?;
+        Ok(build_quote(&label, years, now_unix))
     }
 
     pub fn register(
-        &mut self,
-        label: &str,
-        owner: &str,
+        env: Env,
+        label: String,
+        owner: Address,
         years: u64,
         payment_stroops: u64,
         now_unix: u64,
     ) -> Result<(), RegistrarError> {
-        validate_label(label)?;
-        validate_owner(owner)?;
-        validate_registration_years(years)?;
+        validate_label_soroban(&label).map_err(|_| RegistrarError::Validation)?;
+        validate_registration_years_soroban(years).map_err(|_| RegistrarError::Validation)?;
 
-        if self.reserved_labels.contains(label) {
+        if env
+            .storage()
+            .persistent()
+            .get::<_, bool>(&DataKey::Reserved(label.clone()))
+            .unwrap_or(false)
+        {
             return Err(RegistrarError::Reserved);
         }
 
-        let quote = quote_registration(label, years, now_unix);
+        let quote = build_quote(&label, years, now_unix);
         if payment_stroops < quote.fee_stroops {
             return Err(RegistrarError::InsufficientFee);
         }
 
-        let name = format!("{label}.xlm");
-        if let Some(existing) = self.registrations.get(&name) {
-            if !existing.record.is_claimable_at(now_unix) {
+        let name = build_xlm_name(&env, &label).map_err(|_| RegistrarError::Validation)?;
+        if let Some(existing) = env
+            .storage()
+            .persistent()
+            .get::<_, RegistrationRecord>(&DataKey::Registration(name.clone()))
+        {
+            if now_unix <= existing.grace_period_ends_at {
                 return Err(RegistrarError::AlreadyRegistered);
             }
         }
 
-        self.treasury_balance = self.treasury_balance.saturating_add(payment_stroops);
-        self.registrations.insert(
-            name,
-            RegistrationRecord {
-                record: NameRecord::new(
-                    label,
-                    owner,
-                    None,
-                    now_unix,
-                    quote.expiry_unix,
-                    quote.grace_period_ends_at,
-                ),
-                fee_paid: payment_stroops,
-                renewed_at: now_unix,
-            },
-        );
+        let record = RegistrationRecord {
+            name: name.clone(),
+            owner,
+            registered_at: now_unix,
+            expires_at: quote.expiry_unix,
+            grace_period_ends_at: quote.grace_period_ends_at,
+            fee_paid: payment_stroops,
+            renewed_at: now_unix,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Registration(name), &record);
+        let treasury = env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::Treasury)
+            .unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Treasury, &treasury.saturating_add(payment_stroops));
         Ok(())
     }
 
     pub fn renew(
-        &mut self,
-        name: &str,
-        caller: &str,
+        env: Env,
+        name: String,
+        caller: Address,
         years: u64,
         payment_stroops: u64,
         now_unix: u64,
     ) -> Result<(), RegistrarError> {
-        let (label, _) = parse_fqdn(name)?;
-        validate_owner(caller)?;
-        validate_registration_years(years)?;
+        let label = extract_label_soroban(&env, &name).map_err(|_| RegistrarError::Validation)?;
+        validate_registration_years_soroban(years).map_err(|_| RegistrarError::Validation)?;
 
-        let record = self
-            .registrations
-            .get_mut(name)
+        let mut record = env
+            .storage()
+            .persistent()
+            .get::<_, RegistrationRecord>(&DataKey::Registration(name.clone()))
             .ok_or(RegistrarError::NotFound)?;
-        if record.record.owner != caller {
+        if record.owner != caller {
             return Err(RegistrarError::Unauthorized);
         }
-        if !can_renew(record.record.expires_at, now_unix) {
+        if !can_renew(record.expires_at, now_unix) {
             return Err(RegistrarError::NotRenewable);
         }
 
-        let annual_fee = price_for_label(&label);
-        let fee_due = annual_fee.saturating_mul(years);
+        let fee_due = price_for_label_length(label.len() as usize).saturating_mul(years);
         if payment_stroops < fee_due {
             return Err(RegistrarError::InsufficientFee);
         }
 
-        let base_time = record.record.expires_at.max(now_unix);
+        let base_time = if record.expires_at > now_unix {
+            record.expires_at
+        } else {
+            now_unix
+        };
         let expires_at = expiry_from_now(base_time, years);
-        record
-            .record
-            .extend_expiry(expires_at, expires_at.saturating_add(GRACE_PERIOD_SECONDS));
-        record.fee_paid = record.fee_paid.saturating_add(payment_stroops);
+        record.expires_at = expires_at;
+        record.grace_period_ends_at = expires_at.saturating_add(GRACE_PERIOD_SECONDS);
         record.renewed_at = now_unix;
-        self.treasury_balance = self.treasury_balance.saturating_add(payment_stroops);
+        record.fee_paid = record.fee_paid.saturating_add(payment_stroops);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Registration(name), &record);
+
+        let treasury = env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::Treasury)
+            .unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Treasury, &treasury.saturating_add(payment_stroops));
         Ok(())
     }
 
-    pub fn registration(&self, name: &str) -> Option<&RegistrationRecord> {
-        self.registrations.get(name)
+    pub fn registration(env: Env, name: String) -> Option<RegistrationRecord> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Registration(name))
     }
 
-    pub fn is_available(&self, label: &str, now_unix: u64) -> bool {
-        let name = format!("{label}.xlm");
-        self.registrations
-            .get(&name)
-            .map(|record| record.record.is_claimable_at(now_unix))
+    pub fn is_available(env: Env, label: String, now_unix: u64) -> bool {
+        let name = match build_xlm_name(&env, &label) {
+            Ok(name) => name,
+            Err(_) => return false,
+        };
+        env.storage()
+            .persistent()
+            .get::<_, RegistrationRecord>(&DataKey::Registration(name))
+            .map(|record| now_unix > record.grace_period_ends_at)
             .unwrap_or(true)
     }
 
-    pub fn treasury_balance(&self) -> u64 {
-        self.treasury_balance
+    pub fn treasury_balance(env: Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Treasury)
+            .unwrap_or(0)
     }
 }
 
-pub fn quote_registration(label: &str, years: u64, now_unix: u64) -> RegistrationQuote {
-    let annual_fee = price_for_label(label);
+fn build_quote(label: &String, years: u64, now_unix: u64) -> RegistrationQuote {
+    let annual_fee = price_for_label_length(label.len() as usize);
     let expiry_unix = expiry_from_now(now_unix, years);
 
     RegistrationQuote {

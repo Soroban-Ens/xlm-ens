@@ -1,144 +1,141 @@
-pub mod forward;
-pub mod reverse;
-pub mod test;
+mod test;
 
-use std::collections::{BTreeMap, HashMap};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, Address, Env, Map, String,
+};
+use xlm_ns_common::soroban::validate_fqdn_soroban;
+use xlm_ns_common::MAX_TEXT_RECORDS;
 
-use xlm_ns_common::validation::{parse_fqdn, validate_owner};
-use xlm_ns_common::{CommonError, MAX_TEXT_RECORDS};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct ResolutionRecord {
-    pub owner: String,
+    pub owner: Address,
     pub address: String,
-    pub text_records: BTreeMap<String, String>,
+    pub text_records: Map<String, String>,
     pub updated_at: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
+#[contracttype]
+enum DataKey {
+    Forward(String),
+    Reverse(String),
+    Primary(String),
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum ResolverError {
-    Validation(CommonError),
-    RecordNotFound,
-    Unauthorized,
-    TooManyTextRecords,
+    Validation = 1,
+    RecordNotFound = 2,
+    Unauthorized = 3,
+    TooManyTextRecords = 4,
 }
 
-impl core::fmt::Display for ResolverError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Validation(error) => write!(f, "{error}"),
-            Self::RecordNotFound => f.write_str("resolver record was not found"),
-            Self::Unauthorized => f.write_str("caller is not authorized for this resolver record"),
-            Self::TooManyTextRecords => f.write_str("resolver record exceeded the text record limit"),
-        }
-    }
-}
+#[contract]
+pub struct ResolverContract;
 
-impl std::error::Error for ResolverError {}
-
-#[derive(Debug, Default)]
-pub struct ResolverContract {
-    forward_records: HashMap<String, ResolutionRecord>,
-    reverse_records: HashMap<String, String>,
-    primary_names: HashMap<String, String>,
-}
-
+#[contractimpl]
 impl ResolverContract {
     pub fn set_record(
-        &mut self,
-        name: impl Into<String>,
-        owner: impl Into<String>,
-        address: impl Into<String>,
+        env: Env,
+        name: String,
+        owner: Address,
+        address: String,
         now_unix: u64,
     ) -> Result<(), ResolverError> {
-        let name = name.into();
-        parse_fqdn(&name).map_err(ResolverError::Validation)?;
-        let owner = owner.into();
-        validate_owner(&owner).map_err(ResolverError::Validation)?;
-
-        let address = address.into();
-        self.reverse_records.insert(address.clone(), name.clone());
-        self.forward_records.insert(
-            name,
-            ResolutionRecord {
-                owner,
-                address,
-                text_records: BTreeMap::new(),
-                updated_at: now_unix,
-            },
-        );
+        validate_fqdn_soroban(&name).map_err(|_| ResolverError::Validation)?;
+        let record = ResolutionRecord {
+            owner,
+            address: address.clone(),
+            text_records: Map::new(&env),
+            updated_at: now_unix,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Forward(name.clone()), &record);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Reverse(address), &name);
         Ok(())
     }
 
     pub fn set_text_record(
-        &mut self,
-        name: &str,
-        caller: &str,
-        key: impl Into<String>,
-        value: impl Into<String>,
+        env: Env,
+        name: String,
+        caller: Address,
+        key: String,
+        value: String,
         now_unix: u64,
     ) -> Result<(), ResolverError> {
-        let key = key.into();
-        let value = value.into();
-        let record = self
-            .forward_records
-            .get_mut(name)
-            .ok_or(ResolverError::RecordNotFound)?;
+        let mut record = get_record(&env, &name)?;
         if record.owner != caller {
             return Err(ResolverError::Unauthorized);
         }
-        if !record.text_records.contains_key(&key) && record.text_records.len() >= MAX_TEXT_RECORDS {
+        if !record.text_records.contains_key(key.clone())
+            && record.text_records.len() >= MAX_TEXT_RECORDS as u32
+        {
             return Err(ResolverError::TooManyTextRecords);
         }
-
-        record.text_records.insert(key, value);
+        record.text_records.set(key, value);
         record.updated_at = now_unix;
+        put_record(&env, &name, &record);
         Ok(())
     }
 
     pub fn set_primary_name(
-        &mut self,
-        address: &str,
-        caller: &str,
-        name: &str,
+        env: Env,
+        address: String,
+        caller: Address,
+        name: String,
     ) -> Result<(), ResolverError> {
-        let record = self
-            .forward_records
-            .get(name)
-            .ok_or(ResolverError::RecordNotFound)?;
+        let record = get_record(&env, &name)?;
         if record.owner != caller || record.address != address {
             return Err(ResolverError::Unauthorized);
         }
-
-        self.primary_names
-            .insert(address.to_string(), name.to_string());
+        env.storage()
+            .persistent()
+            .set(&DataKey::Primary(record.address.clone()), &name);
         Ok(())
     }
 
-    pub fn remove_record(&mut self, name: &str, caller: &str) -> Result<(), ResolverError> {
-        let record = self
-            .forward_records
-            .get(name)
-            .ok_or(ResolverError::RecordNotFound)?;
+    pub fn remove_record(env: Env, name: String, caller: Address) -> Result<(), ResolverError> {
+        let record = get_record(&env, &name)?;
         if record.owner != caller {
             return Err(ResolverError::Unauthorized);
         }
-
-        let address = record.address.clone();
-        self.forward_records.remove(name);
-        self.reverse_records.remove(&address);
-        self.primary_names.retain(|_, value| value != name);
+        env.storage().persistent().remove(&DataKey::Forward(name.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Reverse(record.address.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Primary(record.address));
         Ok(())
     }
 
-    pub fn resolve(&self, name: &str) -> Option<&ResolutionRecord> {
-        self.forward_records.get(name)
+    pub fn resolve(env: Env, name: String) -> Option<ResolutionRecord> {
+        env.storage().persistent().get(&DataKey::Forward(name))
     }
 
-    pub fn reverse(&self, address: &str) -> Option<&str> {
-        self.primary_names
-            .get(address)
-            .or_else(|| self.reverse_records.get(address))
-            .map(String::as_str)
+    pub fn reverse(env: Env, address: String) -> Option<String> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Primary(address.clone()))
+            .or_else(|| env.storage().persistent().get(&DataKey::Reverse(address)))
     }
+}
+
+fn get_record(env: &Env, name: &String) -> Result<ResolutionRecord, ResolverError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Forward(name.clone()))
+        .ok_or(ResolverError::RecordNotFound)
+}
+
+fn put_record(env: &Env, name: &String, record: &ResolutionRecord) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Forward(name.clone()), record);
 }

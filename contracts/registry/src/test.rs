@@ -1,23 +1,35 @@
 #[cfg(test)]
 mod tests {
-    use crate::types::RegistryEntry;
-    use crate::RegistryContract;
-    use xlm_ns_common::NameRecord;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    use crate::{RegistryContract, RegistryContractClient};
 
     #[test]
-    fn registers_and_transfers_name() {
-        let mut registry = RegistryContract::default();
-        let now_unix = 100;
-        let entry = RegistryEntry::new(
-            NameRecord::new("timmy", "GABC", Some("GABC".into()), now_unix, 1_000, 2_000),
-            None,
-            now_unix,
-        );
+    fn stores_registry_entries_in_persistent_storage() {
+        let env = Env::default();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
 
-        registry.register(entry, now_unix).unwrap();
-        registry.transfer("timmy.xlm", "GABC", "GDEF", now_unix + 1).unwrap();
+        let owner = Address::generate(&env);
+        let next_owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+        let target = Some(String::from_str(&env, "GABC"));
 
-        let stored = registry.resolve("timmy.xlm", now_unix + 1).unwrap();
-        assert_eq!(stored.record.owner, "GDEF");
+        client
+            .register(
+                &name,
+                &owner,
+                &target,
+                &None::<String>,
+                &100,
+                &1_000,
+                &2_000,
+            )
+            .unwrap();
+        client.transfer(&name, &owner, &next_owner, &101).unwrap();
+
+        let resolved = client.resolve(&name, &101).unwrap();
+        assert_eq!(resolved.owner, next_owner);
+        assert_eq!(client.names_for_owner(&next_owner).len(), 1);
     }
 }

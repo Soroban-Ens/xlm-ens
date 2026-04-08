@@ -1,77 +1,91 @@
-pub mod axelar;
-pub mod evm_resolver;
-pub mod test;
+mod test;
 
-use std::collections::HashMap;
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Env, String};
+use xlm_ns_common::soroban::{validate_chain_name_soroban, validate_fqdn_soroban};
 
-use axelar::build_gmp_message;
-pub use evm_resolver::{target_for_chain, EvmTarget};
-use xlm_ns_common::validation::{parse_fqdn, validate_chain_name};
-use xlm_ns_common::CommonError;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct BridgeRoute {
     pub destination_chain: String,
     pub destination_resolver: String,
     pub gateway: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
+#[contracttype]
+enum DataKey {
+    Route(String),
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum BridgeError {
-    Validation(CommonError),
-    UnsupportedChain,
+    Validation = 1,
+    UnsupportedChain = 2,
 }
 
-impl core::fmt::Display for BridgeError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Validation(error) => write!(f, "{error}"),
-            Self::UnsupportedChain => f.write_str("destination chain is not supported"),
-        }
-    }
-}
+#[contract]
+pub struct BridgeContract;
 
-impl std::error::Error for BridgeError {}
-
-impl From<CommonError> for BridgeError {
-    fn from(value: CommonError) -> Self {
-        Self::Validation(value)
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct BridgeContract {
-    routes: HashMap<String, BridgeRoute>,
-}
-
+#[contractimpl]
 impl BridgeContract {
-    pub fn register_chain(&mut self, chain: &str) -> Result<(), BridgeError> {
-        validate_chain_name(chain)?;
-        let target = target_for_chain(chain).ok_or(BridgeError::UnsupportedChain)?;
-        self.routes.insert(
-            chain.to_string(),
-            BridgeRoute {
-                destination_chain: target.chain.to_string(),
-                destination_resolver: target.resolver.to_string(),
-                gateway: target.gateway.to_string(),
-            },
-        );
+    pub fn register_chain(env: Env, chain: String) -> Result<(), BridgeError> {
+        validate_chain_name_soroban(&chain).map_err(|_| BridgeError::Validation)?;
+        let route = target_for_chain(&env, &chain).ok_or(BridgeError::UnsupportedChain)?;
+        env.storage().persistent().set(&DataKey::Route(chain), &route);
         Ok(())
     }
 
-    pub fn build_message(&self, name: &str, chain: &str) -> Result<String, BridgeError> {
-        parse_fqdn(name)?;
-        validate_chain_name(chain)?;
-        let route = self.routes.get(chain).ok_or(BridgeError::UnsupportedChain)?;
+    pub fn build_message(env: Env, name: String, chain: String) -> Result<String, BridgeError> {
+        validate_fqdn_soroban(&name).map_err(|_| BridgeError::Validation)?;
+        validate_chain_name_soroban(&chain).map_err(|_| BridgeError::Validation)?;
+        let route: BridgeRoute = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Route(chain.clone()))
+            .ok_or(BridgeError::UnsupportedChain)?;
 
-        Ok(build_gmp_message(
-            name,
-            &route.destination_chain,
-            &route.destination_resolver,
-        ))
+        Ok(build_gmp_message(&env, &name, &route.destination_chain, &route.destination_resolver))
     }
 
-    pub fn route(&self, chain: &str) -> Option<&BridgeRoute> {
-        self.routes.get(chain)
+    pub fn route(env: Env, chain: String) -> Option<BridgeRoute> {
+        env.storage().persistent().get(&DataKey::Route(chain))
     }
+}
+
+fn target_for_chain(env: &Env, chain: &String) -> Option<BridgeRoute> {
+    let base = String::from_str(env, "base");
+    let ethereum = String::from_str(env, "ethereum");
+    let arbitrum = String::from_str(env, "arbitrum");
+
+    if *chain == base {
+        Some(BridgeRoute {
+            destination_chain: base,
+            destination_resolver: String::from_str(env, "0xbaseResolver"),
+            gateway: String::from_str(env, "0xbaseGateway"),
+        })
+    } else if *chain == ethereum {
+        Some(BridgeRoute {
+            destination_chain: ethereum,
+            destination_resolver: String::from_str(env, "0xethResolver"),
+            gateway: String::from_str(env, "0xethGateway"),
+        })
+    } else if *chain == arbitrum {
+        Some(BridgeRoute {
+            destination_chain: arbitrum,
+            destination_resolver: String::from_str(env, "0xarbResolver"),
+            gateway: String::from_str(env, "0xarbGateway"),
+        })
+    } else {
+        None
+    }
+}
+
+fn build_gmp_message(env: &Env, name: &String, destination_chain: &String, resolver: &String) -> String {
+    let message = format!(
+        "{{\"type\":\"xlm-ns-resolution\",\"name\":\"{}\",\"destination_chain\":\"{}\",\"resolver\":\"{}\"}}",
+        name, destination_chain, resolver
+    );
+    String::from_str(env, &message)
 }

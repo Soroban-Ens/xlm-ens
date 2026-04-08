@@ -1,46 +1,100 @@
-pub mod mint;
-pub mod test;
-pub mod transfer;
+mod test;
 
-use std::collections::HashMap;
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct TokenRecord {
-    pub owner: String,
-    pub approved: Option<String>,
+    pub owner: Address,
+    pub approved: Option<Address>,
     pub metadata_uri: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
+#[contracttype]
+enum DataKey {
+    Token(String),
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
 pub enum NftError {
-    AlreadyMinted,
-    NotFound,
-    Unauthorized,
+    AlreadyMinted = 1,
+    NotFound = 2,
+    Unauthorized = 3,
 }
 
-impl core::fmt::Display for NftError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::AlreadyMinted => f.write_str("token is already minted"),
-            Self::NotFound => f.write_str("token was not found"),
-            Self::Unauthorized => f.write_str("caller is not authorized for this token"),
-        }
-    }
-}
+#[contract]
+pub struct NftContract;
 
-impl std::error::Error for NftError {}
-
-#[derive(Debug, Default)]
-pub struct NftContract {
-    tokens: HashMap<String, TokenRecord>,
-}
-
+#[contractimpl]
 impl NftContract {
-    pub fn owner_of(&self, token_id: &str) -> Option<&str> {
-        self.tokens.get(token_id).map(|record| record.owner.as_str())
+    pub fn mint(
+        env: Env,
+        token_id: String,
+        owner: Address,
+        metadata_uri: Option<String>,
+    ) -> Result<(), NftError> {
+        let key = DataKey::Token(token_id);
+        if env.storage().persistent().has(&key) {
+            return Err(NftError::AlreadyMinted);
+        }
+        let record = TokenRecord {
+            owner,
+            approved: None,
+            metadata_uri,
+        };
+        env.storage().persistent().set(&key, &record);
+        Ok(())
     }
 
-    pub fn token(&self, token_id: &str) -> Option<&TokenRecord> {
-        self.tokens.get(token_id)
+    pub fn approve(
+        env: Env,
+        token_id: String,
+        caller: Address,
+        approved: Address,
+    ) -> Result<(), NftError> {
+        let mut record = get_token(&env, &token_id)?;
+        if record.owner != caller {
+            return Err(NftError::Unauthorized);
+        }
+        record.approved = Some(approved);
+        env.storage().persistent().set(&DataKey::Token(token_id), &record);
+        Ok(())
     }
+
+    pub fn transfer(
+        env: Env,
+        token_id: String,
+        caller: Address,
+        new_owner: Address,
+    ) -> Result<(), NftError> {
+        let mut record = get_token(&env, &token_id)?;
+        if record.owner != caller && record.approved.as_ref() != Some(&caller) {
+            return Err(NftError::Unauthorized);
+        }
+        record.owner = new_owner;
+        record.approved = None;
+        env.storage().persistent().set(&DataKey::Token(token_id), &record);
+        Ok(())
+    }
+
+    pub fn owner_of(env: Env, token_id: String) -> Option<Address> {
+        env.storage()
+            .persistent()
+            .get::<_, TokenRecord>(&DataKey::Token(token_id))
+            .map(|record| record.owner)
+    }
+
+    pub fn token(env: Env, token_id: String) -> Option<TokenRecord> {
+        env.storage().persistent().get(&DataKey::Token(token_id))
+    }
+}
+
+fn get_token(env: &Env, token_id: &String) -> Result<TokenRecord, NftError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Token(token_id.clone()))
+        .ok_or(NftError::NotFound)
 }

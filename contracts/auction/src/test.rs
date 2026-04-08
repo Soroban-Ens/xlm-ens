@@ -1,29 +1,25 @@
 #[cfg(test)]
 mod tests {
-    use crate::bid::Bid;
-    use crate::AuctionContract;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    use crate::{AuctionContract, AuctionContractClient};
 
     #[test]
-    fn settles_using_second_price() {
-        let mut auction = AuctionContract::default();
-        auction.create_auction("vip.xlm", 200, 10, 20).unwrap();
-        auction
-            .place_bid(
-                "vip.xlm",
-                Bid::new("alice", 500, 12),
-                12,
-            )
-            .unwrap();
-        auction
-            .place_bid(
-                "vip.xlm",
-                Bid::new("bob", 300, 14),
-                14,
-            )
-            .unwrap();
+    fn stores_auctions_in_contract_storage() {
+        let env = Env::default();
+        let contract_id = env.register(AuctionContract, ());
+        let client = AuctionContractClient::new(&env, &contract_id);
 
-        let settlement = auction.settle("vip.xlm", 21).unwrap().unwrap();
-        assert_eq!(settlement.winner, Some("alice".to_string()));
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let name = String::from_str(&env, "vip.xlm");
+
+        client.create_auction(&name, &200, &10, &20).unwrap();
+        client.place_bid(&name, &alice, &500, &12).unwrap();
+        client.place_bid(&name, &bob, &300, &13).unwrap();
+
+        let settlement = client.settle(&name, &21).unwrap().unwrap();
+        assert_eq!(settlement.winner, Some(alice));
         assert_eq!(settlement.clearing_price, 300);
     }
 }

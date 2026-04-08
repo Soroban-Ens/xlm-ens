@@ -1,13 +1,26 @@
 #[cfg(test)]
 mod tests {
-    use crate::NftContract;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    use crate::{NftContract, NftContractClient};
 
     #[test]
-    fn mints_and_transfers_tokens() {
-        let mut nft = NftContract::default();
-        nft.mint("timmy.xlm", "alice", Some("ipfs://timmy".into())).unwrap();
-        nft.approve("timmy.xlm", "alice", "market").unwrap();
-        nft.transfer("timmy.xlm", "market", "bob").unwrap();
-        assert_eq!(nft.owner_of("timmy.xlm"), Some("bob"));
+    fn stores_token_records_in_contract_storage() {
+        let env = Env::default();
+        let contract_id = env.register(NftContract, ());
+        let client = NftContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let approved = Address::generate(&env);
+        let new_owner = Address::generate(&env);
+        let token_id = String::from_str(&env, "timmy.xlm");
+
+        client
+            .mint(&token_id, &owner, &Some(String::from_str(&env, "ipfs://timmy")))
+            .unwrap();
+        client.approve(&token_id, &owner, &approved).unwrap();
+        client.transfer(&token_id, &approved, &new_owner).unwrap();
+
+        assert_eq!(client.owner_of(&token_id), Some(new_owner));
     }
 }

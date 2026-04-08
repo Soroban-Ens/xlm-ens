@@ -1,18 +1,35 @@
 #[cfg(test)]
 mod tests {
-    use crate::SubdomainContract;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    use crate::{SubdomainContract, SubdomainContractClient};
 
     #[test]
-    fn creates_subdomain_names() {
-        let mut contract = SubdomainContract::default();
-        contract.register_parent("timmy.xlm", "alice").unwrap();
-        contract.add_controller("timmy.xlm", "alice", "controller").unwrap();
-        let fqdn = contract
-            .create("pay", "timmy.xlm", "controller", "bob", 100)
+    fn stores_subdomain_records_in_contract_storage() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let controller = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &owner).unwrap();
+        client.add_controller(&parent, &owner, &controller).unwrap();
+
+        let fqdn = client
+            .create(
+                &String::from_str(&env, "pay"),
+                &parent,
+                &controller,
+                &sub_owner,
+                &100,
+            )
             .unwrap();
 
-        assert_eq!(fqdn, "pay.timmy.xlm");
-        assert!(contract.exists("pay.timmy.xlm"));
-        assert_eq!(contract.record("pay.timmy.xlm").unwrap().owner, "bob");
+        assert_eq!(fqdn, String::from_str(&env, "pay.timmy.xlm"));
+        assert!(client.exists(&fqdn));
+        assert_eq!(client.record(&fqdn).unwrap().owner, sub_owner);
     }
 }

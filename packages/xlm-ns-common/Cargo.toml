@@ -3,3 +3,6 @@ name = "xlm-ns-common"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+
+[dependencies]
+soroban-sdk = "=23.1.0"
