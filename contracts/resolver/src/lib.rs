@@ -119,6 +119,10 @@ impl ResolverContract {
         env.storage().persistent().get(&DataKey::Forward(name))
     }
 
+    pub fn has_record(env: Env, name: String) -> bool {
+        env.storage().persistent().has(&DataKey::Forward(name))
+    }
+
     pub fn reverse(env: Env, address: String) -> Option<String> {
         env.storage()
             .persistent()

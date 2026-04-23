@@ -122,6 +122,10 @@ impl SubdomainContract {
         env.storage().persistent().has(&DataKey::Subdomain(fqdn))
     }
 
+    pub fn parent(env: Env, parent: String) -> Option<ParentDomain> {
+        env.storage().persistent().get(&DataKey::Parent(parent))
+    }
+
     pub fn record(env: Env, fqdn: String) -> Option<SubdomainRecord> {
         env.storage().persistent().get(&DataKey::Subdomain(fqdn))
     }
