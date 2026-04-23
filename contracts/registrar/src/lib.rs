@@ -2,15 +2,14 @@ pub mod expiry;
 pub mod pricing;
 mod test;
 
+use expiry::expiry_from_now;
+use pricing::price_for_label_length;
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String};
 use xlm_ns_common::soroban::{
     build_xlm_name, extract_label_soroban, validate_label_soroban,
     validate_registration_years_soroban,
 };
 use xlm_ns_common::GRACE_PERIOD_SECONDS;
-
-use expiry::{expiry_from_now, within_grace_period};
-use pricing::price_for_label_length;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -51,6 +50,7 @@ pub enum RegistrarError {
     Reserved = 5,
     Unauthorized = 6,
     Validation = 7,
+    RegistrationClaimable = 8,
 }
 
 #[contract]
@@ -156,8 +156,10 @@ impl RegistrarContract {
         if record.owner != caller {
             return Err(RegistrarError::Unauthorized);
         }
-        if !can_renew(record.expires_at, now_unix) {
-            return Err(RegistrarError::NotRenewable);
+        match can_renew(record.expires_at, now_unix) {
+            Ok(true) => {}
+            Ok(false) => return Err(RegistrarError::NotRenewable),
+            Err(e) => return Err(e),
         }
 
         let fee_due = price_for_label_length(label.len() as usize).saturating_mul(years);
@@ -226,6 +228,12 @@ fn build_quote(label: &String, years: u64, now_unix: u64) -> RegistrationQuote {
     }
 }
 
-pub fn can_renew(expiry_unix: u64, now_unix: u64) -> bool {
-    now_unix <= expiry_unix || within_grace_period(expiry_unix, now_unix)
+pub fn can_renew(expiry_unix: u64, now_unix: u64) -> Result<bool, RegistrarError> {
+    let grace_period_end = expiry_unix.saturating_add(GRACE_PERIOD_SECONDS);
+
+    if now_unix > grace_period_end {
+        return Err(RegistrarError::RegistrationClaimable);
+    }
+
+    Ok(now_unix <= grace_period_end)
 }
