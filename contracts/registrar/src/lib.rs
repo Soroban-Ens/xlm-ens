@@ -13,6 +13,8 @@ use xlm_ns_common::soroban::{
 };
 use xlm_ns_common::GRACE_PERIOD_SECONDS;
 
+pub const ADMIN_RECOVERY_SUPPORTED: bool = false;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct RegistrationQuote {
@@ -62,14 +64,9 @@ pub struct RegistrarContract;
 
 #[contractimpl]
 impl RegistrarContract {
-    pub fn initialize(env: Env, registry: Address) -> Result<(), RegistrarError> {
-        if env.storage().instance().has(&DataKey::Registry) {
-            return Err(RegistrarError::Unauthorized);
-        }
-        env.storage().instance().set(&DataKey::Registry, &registry);
-        Ok(())
-    }
-
+    // Release policy: registrations are only released through the normal
+    // expiry-plus-grace lifecycle. This contract does not expose an admin
+    // recovery or forced-release override.
     pub fn reserve_label(env: Env, label: String) -> Result<(), RegistrarError> {
         validate_label_soroban(&label).map_err(|_| RegistrarError::Validation)?;
         env.storage()
@@ -268,6 +265,10 @@ impl RegistrarContract {
             .persistent()
             .get(&DataKey::Treasury)
             .unwrap_or(0)
+    }
+
+    pub fn supports_admin_recovery(_env: Env) -> bool {
+        ADMIN_RECOVERY_SUPPORTED
     }
 }
 
