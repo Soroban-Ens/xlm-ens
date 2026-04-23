@@ -3,7 +3,7 @@ mod tests {
     use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
     use crate::{AuctionContract, AuctionContractClient};
-//////
+
     #[test]
     fn stores_auctions_in_contract_storage() {
         let env = Env::default();
