@@ -1,0 +1,36 @@
+[package]
+name = "xlm-ns-integration-tests"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dev-dependencies]
+soroban-sdk = { version = "=23.1.0", features = ["testutils"] }
+xlm-ns-registrar = { path = "../contracts/registrar" }
+xlm-ns-registry  = { path = "../contracts/registry" }
+xlm-ns-resolver  = { path = "../contracts/resolver" }
+xlm-ns-subdomain = { path = "../contracts/subdomain" }
+
+[[test]]
+name = "registrar_registry_test"
+path = "integration/registrar_registry_test.rs"
+
+[[test]]
+name = "registrar_test"
+path = "integration/registrar_test.rs"
+
+[[test]]
+name = "registry_test"
+path = "integration/registry_test.rs"
+
+[[test]]
+name = "subdomain_test"
+path = "integration/subdomain_test.rs"
+
+[[test]]
+name = "auction_test"
+path = "integration/auction_test.rs"
+
+[[test]]
+name = "bridge_test"
+path = "integration/bridge_test.rs"

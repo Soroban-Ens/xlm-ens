@@ -29,7 +29,9 @@ mod tests {
         assert_eq!(record.owner, owner);
         assert_eq!(record.address, address);
         assert_eq!(
-            record.text_records.get(String::from_str(&env, "com.twitter")),
+            record
+                .text_records
+                .get(String::from_str(&env, "com.twitter")),
             Some(String::from_str(&env, "@timmy"))
         );
         assert_eq!(record.updated_at, 101);
@@ -137,7 +139,9 @@ mod tests {
         let updated_record = client.resolve(&name).unwrap();
         assert_eq!(updated_record.text_records.len(), MAX_TEXT_RECORDS as u32);
         assert_eq!(
-            updated_record.text_records.get(String::from_str(&env, "key-0")),
+            updated_record
+                .text_records
+                .get(String::from_str(&env, "key-0")),
             Some(String::from_str(&env, "updated"))
         );
         assert_eq!(updated_record.updated_at, 500);
@@ -152,7 +156,10 @@ mod tests {
             );
         }));
 
-        assert!(overflow.is_err(), "adding a new key past the limit should fail");
+        assert!(
+            overflow.is_err(),
+            "adding a new key past the limit should fail"
+        );
     }
 
     #[test]
@@ -192,7 +199,10 @@ mod tests {
         let record = client.resolve(&name).unwrap();
         assert_eq!(record.address, new_address);
         assert_eq!(record.updated_at, 101);
-        assert_eq!(client.reverse(&String::from_str(&env, "GDEF")), Some(name.clone()));
+        assert_eq!(
+            client.reverse(&String::from_str(&env, "GDEF")),
+            Some(name.clone())
+        );
         assert_eq!(client.reverse(&String::from_str(&env, "GABC")), Some(name));
     }
 }

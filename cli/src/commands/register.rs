@@ -1,12 +1,13 @@
-use crate::config::Network;
+use crate::config::NetworkConfig;
 use xlm_ns_sdk::client::XlmNsClient;
 use xlm_ns_sdk::types::RegistrationRequest;
 
-pub fn run_register(network: Network, label: &str, owner: &str) {
-    let client = XlmNsClient::new(match network {
-        Network::Testnet => "https://soroban-testnet.example",
-        Network::Mainnet => "https://soroban-mainnet.example",
-    });
+pub fn run_register(config: NetworkConfig, label: &str, owner: &str) {
+    let client = XlmNsClient::new(
+        config.rpc_url,
+        Some(config.network_passphrase),
+        Some(config.registry_contract_id),
+    );
 
     // 1. Fetch Quote
     let duration_years = 1; // Default to 1 year
