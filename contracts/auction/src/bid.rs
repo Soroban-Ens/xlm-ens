@@ -9,7 +9,7 @@ impl Bid {
     pub fn new(bidder: impl Into<String>, amount: u64, placed_at: u64) -> Self {
         Self {
             bidder: bidder.into(),
-            amount: amount.try_into().expect("Amount exceeds u94 limit"),
+            amount,
             placed_at,
         }
     }
