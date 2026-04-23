@@ -1,10 +1,11 @@
 {
   "generators": {
-    "address": 1,
+    "address": 4,
     "nonce": 0,
     "mux_id": 0
   },
   "auth": [
+    [],
     [],
     [],
     [],
@@ -28,10 +29,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "Route"
+                  "symbol": "Token"
                 },
                 {
-                  "string": "base"
+                  "string": "timmy.xlm"
                 }
               ]
             },
@@ -48,10 +49,10 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "Route"
+                      "symbol": "Token"
                     },
                     {
-                      "string": "base"
+                      "string": "timmy.xlm"
                     }
                   ]
                 },
@@ -60,26 +61,24 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "destination_chain"
+                        "symbol": "approved"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "metadata_uri"
                       },
                       "val": {
-                        "string": "base"
+                        "string": "ipfs://timmy"
                       }
                     },
                     {
                       "key": {
-                        "symbol": "destination_resolver"
+                        "symbol": "owner"
                       },
                       "val": {
-                        "string": "0xbaseResolver"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "gateway"
-                      },
-                      "val": {
-                        "string": "0xbaseGateway"
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                       }
                     }
                   ]

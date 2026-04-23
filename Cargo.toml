@@ -10,6 +10,7 @@ members = [
     "packages/xlm-ns-sdk",
     "packages/xlm-ns-common",
     "cli",
+    "tests",
 ]
 resolver = "2"
 

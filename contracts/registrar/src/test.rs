@@ -7,6 +7,7 @@ mod tests {
     use crate::{
         can_renew, RegistrarContract, RegistrarContractClient, RegistrarError, GRACE_PERIOD_SECONDS,
     };
+    use xlm_ns_registry::RegistryContract;
 
     #[test]
     fn applies_tiered_pricing() {
@@ -27,6 +28,9 @@ mod tests {
         let env = Env::default();
         let contract_id = env.register(RegistrarContract, ());
         let client = RegistrarContractClient::new(&env, &contract_id);
+
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id);
 
         let owner = Address::generate(&env);
         let label = String::from_str(&env, "timmy");
@@ -119,6 +123,9 @@ mod tests {
         let contract_id = env.register(RegistrarContract, ());
         let client = RegistrarContractClient::new(&env, &contract_id);
 
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id);
+
         let owner = Address::generate(&env);
         let label = String::from_str(&env, "test");
         let name = String::from_str(&env, "test.xlm");
@@ -143,6 +150,9 @@ mod tests {
         let env = Env::default();
         let contract_id = env.register(RegistrarContract, ());
         let client = RegistrarContractClient::new(&env, &contract_id);
+
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id);
 
         let owner = Address::generate(&env);
         let label = String::from_str(&env, "boundary");

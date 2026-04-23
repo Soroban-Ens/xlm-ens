@@ -1,11 +1,10 @@
 {
   "generators": {
-    "address": 1,
+    "address": 3,
     "nonce": 0,
     "mux_id": 0
   },
   "auth": [
-    [],
     [],
     [],
     [],
@@ -28,10 +27,10 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "Route"
+                  "symbol": "Token"
                 },
                 {
-                  "string": "base"
+                  "string": "timmy.xlm"
                 }
               ]
             },
@@ -48,10 +47,10 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "Route"
+                      "symbol": "Token"
                     },
                     {
-                      "string": "base"
+                      "string": "timmy.xlm"
                     }
                   ]
                 },
@@ -60,26 +59,22 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "destination_chain"
+                        "symbol": "approved"
                       },
-                      "val": {
-                        "string": "base"
-                      }
+                      "val": "void"
                     },
                     {
                       "key": {
-                        "symbol": "destination_resolver"
+                        "symbol": "metadata_uri"
                       },
-                      "val": {
-                        "string": "0xbaseResolver"
-                      }
+                      "val": "void"
                     },
                     {
                       "key": {
-                        "symbol": "gateway"
+                        "symbol": "owner"
                       },
                       "val": {
-                        "string": "0xbaseGateway"
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                       }
                     }
                   ]
