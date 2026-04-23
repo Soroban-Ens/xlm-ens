@@ -56,9 +56,7 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
-    // Mutating entrypoints require Soroban auth from the address that is
-    // authorizing the state change, rather than relying on address equality
-    // checks alone.
+    #[allow(clippy::too_many_arguments)]
     pub fn register(
         env: Env,
         name: String,
