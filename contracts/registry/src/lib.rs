@@ -54,6 +54,7 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
+    #[allow(clippy::too_many_arguments)]
     pub fn register(
         env: Env,
         name: String,
