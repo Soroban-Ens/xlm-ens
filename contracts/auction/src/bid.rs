@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bid {
     pub bidder: String,
-    pub amount: u64,
+    pub amount: u94,
     pub placed_at: u64,
 }
 
@@ -9,7 +9,7 @@ impl Bid {
     pub fn new(bidder: impl Into<String>, amount: u64, placed_at: u64) -> Self {
         Self {
             bidder: bidder.into(),
-            amount,
+            amount: amount.try_into().expect("Amount exceeds u94 limit"),
             placed_at,
         }
     }
