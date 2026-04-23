@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bid {
     pub bidder: String,
-    pub amount: u64,
+    pub amount: u54,
     pub placed_at: u64,
 }
 
