@@ -4,6 +4,8 @@ use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, 
 use xlm_ns_common::soroban::validate_fqdn_soroban;
 use xlm_ns_common::{DEFAULT_TTL_SECONDS, MAX_METADATA_URI_LENGTH};
 
+pub const ADMIN_RECOVERY_SUPPORTED: bool = false;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct RegistryEntry {
@@ -59,6 +61,10 @@ impl RegistryContract {
     // Mutating entrypoints require Soroban auth from the address that is
     // authorizing the state change, rather than relying on address equality
     // checks alone.
+    //
+    // Release policy: this registry does not support admin recovery or forced
+    // reassignment. Names can only leave an owner-controlled state through the
+    // normal expiry and grace-period flow.
     pub fn register(
         env: Env,
         name: String,
@@ -200,6 +206,10 @@ impl RegistryContract {
             .persistent()
             .get(&DataKey::OwnerNames(owner))
             .unwrap_or(Vec::new(&env))
+    }
+
+    pub fn supports_admin_recovery(_env: Env) -> bool {
+        ADMIN_RECOVERY_SUPPORTED
     }
 }
 

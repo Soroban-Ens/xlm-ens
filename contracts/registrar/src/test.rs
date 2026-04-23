@@ -157,4 +157,13 @@ mod tests {
         let record = client.registration(&name).unwrap();
         assert!(record.expires_at > quote.expiry_unix);
     }
+
+    #[test]
+    fn declares_that_admin_recovery_is_not_supported() {
+        let env = Env::default();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+
+        assert!(!client.supports_admin_recovery());
+    }
 }
