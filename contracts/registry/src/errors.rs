@@ -9,6 +9,8 @@ pub enum RegistryError {
     NotActive,
     Unauthorized,
     MetadataTooLong,
+    InvalidExpiry,
+    InvalidGracePeriod,
     Validation(CommonError),
 }
 
@@ -21,6 +23,12 @@ impl fmt::Display for RegistryError {
             Self::NotActive => f.write_str("name is not currently active"),
             Self::Unauthorized => f.write_str("caller is not authorized for this name"),
             Self::MetadataTooLong => f.write_str("metadata uri exceeds the allowed length"),
+            Self::InvalidExpiry => {
+                f.write_str("expires_at must be greater than or equal to the current time")
+            }
+            Self::InvalidGracePeriod => {
+                f.write_str("grace_period_ends_at must be greater than or equal to expires_at")
+            }
             Self::Validation(error) => write!(f, "{error}"),
         }
     }

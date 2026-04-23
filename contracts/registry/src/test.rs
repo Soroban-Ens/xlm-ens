@@ -2,7 +2,7 @@
 mod tests {
     use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
-    use crate::{RegistryContract, RegistryContractClient};
+    use crate::{RegistryContract, RegistryContractClient, RegistryError};
 
     #[test]
     fn stores_registry_entries_in_persistent_storage() {
@@ -29,5 +29,78 @@ mod tests {
         let resolved = client.resolve(&name, &101);
         assert_eq!(resolved.owner, next_owner);
         assert_eq!(client.names_for_owner(&next_owner).len(), 1);
+    }
+
+    #[test]
+    fn rejects_registration_with_expiry_before_now() {
+        let env = Env::default();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        let result = client.try_register(
+            &name,
+            &owner,
+            &None::<String>,
+            &None::<String>,
+            &100,
+            &99,
+            &100,
+        );
+
+        assert_eq!(result, Ok(Err(RegistryError::InvalidExpiry)));
+    }
+
+    #[test]
+    fn rejects_registration_with_grace_period_before_expiry() {
+        let env = Env::default();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        let result = client.try_register(
+            &name,
+            &owner,
+            &None::<String>,
+            &None::<String>,
+            &100,
+            &200,
+            &199,
+        );
+
+        assert_eq!(result, Ok(Err(RegistryError::InvalidGracePeriod)));
+    }
+
+    #[test]
+    fn rejects_renewal_with_malformed_lifecycle_timestamps() {
+        let env = Env::default();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        client.register(
+            &name,
+            &owner,
+            &None::<String>,
+            &None::<String>,
+            &100,
+            &200,
+            &300,
+        );
+
+        let invalid_expiry = client.try_renew(&name, &owner, &99, &300, &100);
+        assert_eq!(invalid_expiry, Ok(Err(RegistryError::InvalidExpiry)));
+
+        let invalid_grace_period = client.try_renew(&name, &owner, &250, &249, &100);
+        assert_eq!(
+            invalid_grace_period,
+            Ok(Err(RegistryError::InvalidGracePeriod))
+        );
     }
 }

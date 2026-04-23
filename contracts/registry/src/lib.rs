@@ -47,6 +47,8 @@ pub enum RegistryError {
     Unauthorized = 5,
     MetadataTooLong = 6,
     Validation = 7,
+    InvalidExpiry = 8,
+    InvalidGracePeriod = 9,
 }
 
 #[contract]
@@ -67,6 +69,7 @@ impl RegistryContract {
     ) -> Result<(), RegistryError> {
         validate_fqdn_soroban(&name).map_err(|_| RegistryError::Validation)?;
         validate_metadata(&metadata_uri)?;
+        validate_lifecycle_timestamps(now_unix, expires_at, grace_period_ends_at)?;
 
         let key = DataKey::Entry(name.clone());
         if let Some(existing) = env.storage().persistent().get::<_, RegistryEntry>(&key) {
@@ -218,6 +221,22 @@ fn validate_metadata(metadata_uri: &Option<String>) -> Result<(), RegistryError>
         .unwrap_or(false)
     {
         return Err(RegistryError::MetadataTooLong);
+    }
+
+    Ok(())
+}
+
+fn validate_lifecycle_timestamps(
+    now_unix: u64,
+    expires_at: u64,
+    grace_period_ends_at: u64,
+) -> Result<(), RegistryError> {
+    if expires_at < now_unix {
+        return Err(RegistryError::InvalidExpiry);
+    }
+
+    if grace_period_ends_at < expires_at {
+        return Err(RegistryError::InvalidGracePeriod);
     }
 
     Ok(())
