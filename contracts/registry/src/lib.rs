@@ -56,6 +56,9 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
+    // Mutating entrypoints require Soroban auth from the address that is
+    // authorizing the state change, rather than relying on address equality
+    // checks alone.
     pub fn register(
         env: Env,
         name: String,
@@ -66,6 +69,7 @@ impl RegistryContract {
         expires_at: u64,
         grace_period_ends_at: u64,
     ) -> Result<(), RegistryError> {
+        owner.require_auth();
         validate_fqdn_soroban(&name).map_err(|_| RegistryError::Validation)?;
         validate_metadata(&metadata_uri)?;
         validate_lifecycle_timestamps(now_unix, expires_at, grace_period_ends_at)?;
@@ -115,6 +119,7 @@ impl RegistryContract {
         new_owner: Address,
         now_unix: u64,
     ) -> Result<(), RegistryError> {
+        caller.require_auth();
         let mut entry = get_entry(&env, &name)?;
         ensure_owner(&entry, &caller, now_unix)?;
         let old_owner = entry.owner.clone();
@@ -133,6 +138,7 @@ impl RegistryContract {
         resolver: Option<String>,
         now_unix: u64,
     ) -> Result<(), RegistryError> {
+        caller.require_auth();
         let mut entry = get_entry(&env, &name)?;
         ensure_owner(&entry, &caller, now_unix)?;
         entry.resolver = resolver;
@@ -147,6 +153,7 @@ impl RegistryContract {
         target_address: Option<String>,
         now_unix: u64,
     ) -> Result<(), RegistryError> {
+        caller.require_auth();
         let mut entry = get_entry(&env, &name)?;
         ensure_owner(&entry, &caller, now_unix)?;
         entry.target_address = target_address;
@@ -161,6 +168,7 @@ impl RegistryContract {
         metadata_uri: Option<String>,
         now_unix: u64,
     ) -> Result<(), RegistryError> {
+        caller.require_auth();
         validate_metadata(&metadata_uri)?;
         let mut entry = get_entry(&env, &name)?;
         ensure_owner(&entry, &caller, now_unix)?;
@@ -177,6 +185,7 @@ impl RegistryContract {
         grace_period_ends_at: u64,
         now_unix: u64,
     ) -> Result<(), RegistryError> {
+        caller.require_auth();
         let mut entry = get_entry(&env, &name)?;
         ensure_owner(&entry, &caller, now_unix)?;
         validate_lifecycle_timestamps(now_unix, expires_at, grace_period_ends_at)?;
