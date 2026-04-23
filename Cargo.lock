@@ -1728,6 +1728,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "xlm-ns-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "xlm-ns-registrar",
+ "xlm-ns-registry",
+ "xlm-ns-resolver",
+ "xlm-ns-subdomain",
+]
+
+[[package]]
 name = "xlm-ns-nft"
 version = "0.1.0"
 dependencies = [
@@ -1740,6 +1751,7 @@ version = "0.1.0"
 dependencies = [
  "soroban-sdk",
  "xlm-ns-common",
+ "xlm-ns-registry",
 ]
 
 [[package]]
