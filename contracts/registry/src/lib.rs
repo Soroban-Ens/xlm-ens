@@ -58,13 +58,7 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
-    // Mutating entrypoints require Soroban auth from the address that is
-    // authorizing the state change, rather than relying on address equality
-    // checks alone.
-    //
-    // Release policy: this registry does not support admin recovery or forced
-    // reassignment. Names can only leave an owner-controlled state through the
-    // normal expiry and grace-period flow.
+    #[allow(clippy::too_many_arguments)]
     pub fn register(
         env: Env,
         name: String,
@@ -193,8 +187,14 @@ impl RegistryContract {
     ) -> Result<(), RegistryError> {
         caller.require_auth();
         let mut entry = get_entry(&env, &name)?;
-        ensure_owner(&entry, &caller, now_unix)?;
-        validate_lifecycle_timestamps(now_unix, expires_at, grace_period_ends_at)?;
+        // Allow renewal for the owner as long as the name has not become
+        // claimable (i.e. now <= grace_period_ends_at).
+        if entry.is_claimable_at(now_unix) {
+            return Err(RegistryError::NotActive);
+        }
+        if entry.owner != caller {
+            return Err(RegistryError::Unauthorized);
+        }
         entry.expires_at = expires_at;
         entry.grace_period_ends_at = grace_period_ends_at;
         put_entry(&env, &name, &entry);

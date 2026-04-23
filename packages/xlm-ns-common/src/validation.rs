@@ -70,9 +70,7 @@ pub fn validate_chain_name(chain: &str) -> Result<(), CommonError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_fqdn, validate_chain_name, validate_label, validate_registration_years,
-    };
+    use super::{parse_fqdn, validate_chain_name, validate_label, validate_registration_years};
     use crate::constants::{
         MAX_NAME_LENGTH, MAX_REGISTRATION_YEARS, MIN_NAME_LENGTH, MIN_REGISTRATION_YEARS,
     };
@@ -83,10 +81,7 @@ mod tests {
     fn rejects_short_labels() {
         let short_label = "a".repeat(MIN_NAME_LENGTH - 1);
 
-        assert_eq!(
-            validate_label(&short_label),
-            Err(CommonError::NameTooShort)
-        );
+        assert_eq!(validate_label(&short_label), Err(CommonError::NameTooShort));
     }
 
     #[test]
@@ -98,22 +93,13 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_tlds() {
-        assert_eq!(
-            parse_fqdn("valid.eth"),
-            Err(CommonError::UnsupportedTld)
-        );
+        assert_eq!(parse_fqdn("valid.eth"), Err(CommonError::UnsupportedTld));
     }
 
     #[test]
     fn rejects_invalid_characters() {
-        assert_eq!(
-            validate_label("ab_"),
-            Err(CommonError::InvalidCharacters)
-        );
-        assert_eq!(
-            parse_fqdn("ab_.xlm"),
-            Err(CommonError::InvalidCharacters)
-        );
+        assert_eq!(validate_label("ab_"), Err(CommonError::InvalidCharacters));
+        assert_eq!(parse_fqdn("ab_.xlm"), Err(CommonError::InvalidCharacters));
     }
 
     #[test]
@@ -130,19 +116,16 @@ mod tests {
 
     #[test]
     fn accepts_valid_fqdn() {
-        assert_eq!(parse_fqdn("abc-123.xlm"), Ok(("abc-123".to_string(), Tld::Xlm)));
+        assert_eq!(
+            parse_fqdn("abc-123.xlm"),
+            Ok(("abc-123".to_string(), Tld::Xlm))
+        );
     }
 
     #[test]
     fn enforces_registration_year_bounds() {
-        assert_eq!(
-            validate_registration_years(MIN_REGISTRATION_YEARS),
-            Ok(())
-        );
-        assert_eq!(
-            validate_registration_years(MAX_REGISTRATION_YEARS),
-            Ok(())
-        );
+        assert_eq!(validate_registration_years(MIN_REGISTRATION_YEARS), Ok(()));
+        assert_eq!(validate_registration_years(MAX_REGISTRATION_YEARS), Ok(()));
         assert_eq!(
             validate_registration_years(MIN_REGISTRATION_YEARS - 1),
             Err(CommonError::InvalidRegistrationPeriod)
@@ -156,9 +139,6 @@ mod tests {
     #[test]
     fn validates_chain_name_presence() {
         assert_eq!(validate_chain_name("stellar"), Ok(()));
-        assert_eq!(
-            validate_chain_name("   "),
-            Err(CommonError::EmptyChainName)
-        );
+        assert_eq!(validate_chain_name("   "), Err(CommonError::EmptyChainName));
     }
 }

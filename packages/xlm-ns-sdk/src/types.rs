@@ -18,7 +18,20 @@ pub struct RenewalRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct RenewalResult {
+    pub name: String,
+    pub new_expiry: u64,
+    pub fee_paid: u64,
+}
+
+#[derive(Debug, Clone)]
 pub struct ResolutionResult {
     pub name: String,
     pub address: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TransferRequest {
+    pub name: String,
+    pub new_owner: String,
 }

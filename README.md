@@ -152,17 +152,14 @@ event trail, and document the governance process around who can invoke it.
 
 ## Registration flow
 
-The intended contract interaction order is:
+The registration flow is now integrated on-chain:
 
 1. Ask the registrar for a quote using the requested label and registration
    duration.
-2. Submit payment and create a registration record.
-3. Materialize the name in the registry with the resulting ownership state.
-4. Set resolver records for forward and reverse lookups.
-5. Optionally mint an NFT and configure bridge routes or subdomains.
-
-The current codebase models each of those steps, but not yet as a single
-integrated on-chain transaction graph.
+2. Submit payment and create a registration record. The registrar automatically
+   materializes the name in the registry with the resulting ownership state.
+3. Set resolver records for forward and reverse lookups.
+4. Optionally mint an NFT and configure bridge routes or subdomains.
 
 ## Naming and validation rules
 
@@ -203,7 +200,7 @@ The project is currently in active development. The following milestones outline
 - [x] Shared validation rules
 
 ### Phase 2: Testnet Beta
-- [ ] **Integration**: Wire CLI through full quote/submit flows (#9)
+- [x] **Integration**: Wire CLI through full quote/submit flows (#9)
 - [ ] **Testing**: Expand auction and edge-case unit tests (#95)
 - [ ] **Automation**: CI/CD for formatting and workspace tests (#99)
 - [ ] **SDK**: Full client implementation with Soroban RPC integration

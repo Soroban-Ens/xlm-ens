@@ -42,7 +42,11 @@ mod tests {
         client.mint(&token_id, &owner, &None::<String>);
 
         let duplicate_mint = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            client.mint(&token_id, &other_owner, &Some(String::from_str(&env, "ipfs://other")));
+            client.mint(
+                &token_id,
+                &other_owner,
+                &Some(String::from_str(&env, "ipfs://other")),
+            );
         }));
 
         assert!(duplicate_mint.is_err(), "duplicate mint should fail");
@@ -103,7 +107,10 @@ mod tests {
             client.transfer(&token_id, &intruder, &new_owner);
         }));
 
-        assert!(unauthorized_transfer.is_err(), "unauthorized transfer should fail");
+        assert!(
+            unauthorized_transfer.is_err(),
+            "unauthorized transfer should fail"
+        );
         assert_eq!(client.owner_of(&token_id), Some(owner.clone()));
 
         let token = client.token(&token_id).unwrap();
@@ -122,7 +129,11 @@ mod tests {
         let approved = Address::generate(&env);
         let token_id = String::from_str(&env, "timmy.xlm");
 
-        client.mint(&token_id, &owner, &Some(String::from_str(&env, "ipfs://timmy")));
+        client.mint(
+            &token_id,
+            &owner,
+            &Some(String::from_str(&env, "ipfs://timmy")),
+        );
         client.approve(&token_id, &owner, &approved);
         client.transfer(&token_id, &owner, &new_owner);
 
@@ -144,7 +155,10 @@ mod tests {
         let token = client.token(&token_id).unwrap();
         assert_eq!(token.owner, new_owner);
         assert_eq!(token.approved, None);
-        assert_eq!(token.metadata_uri, Some(String::from_str(&env, "ipfs://timmy")));
+        assert_eq!(
+            token.metadata_uri,
+            Some(String::from_str(&env, "ipfs://timmy"))
+        );
     }
 
     #[test]
