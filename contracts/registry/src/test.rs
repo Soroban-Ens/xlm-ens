@@ -7,6 +7,7 @@ mod tests {
     #[test]
     fn stores_registry_entries_in_persistent_storage() {
         let env = Env::default();
+        env.mock_all_auths();
         let contract_id = env.register(RegistryContract, ());
         let client = RegistryContractClient::new(&env, &contract_id);
 
@@ -34,6 +35,7 @@ mod tests {
     #[test]
     fn rejects_registration_with_expiry_before_now() {
         let env = Env::default();
+        env.mock_all_auths();
         let contract_id = env.register(RegistryContract, ());
         let client = RegistryContractClient::new(&env, &contract_id);
 
@@ -56,6 +58,7 @@ mod tests {
     #[test]
     fn rejects_registration_with_grace_period_before_expiry() {
         let env = Env::default();
+        env.mock_all_auths();
         let contract_id = env.register(RegistryContract, ());
         let client = RegistryContractClient::new(&env, &contract_id);
 
@@ -78,6 +81,7 @@ mod tests {
     #[test]
     fn rejects_renewal_with_malformed_lifecycle_timestamps() {
         let env = Env::default();
+        env.mock_all_auths();
         let contract_id = env.register(RegistryContract, ());
         let client = RegistryContractClient::new(&env, &contract_id);
 
@@ -102,5 +106,63 @@ mod tests {
             invalid_grace_period,
             Ok(Err(RegistryError::InvalidGracePeriod))
         );
+    }
+
+    #[test]
+    fn rejects_registration_without_owner_auth() {
+        let env = Env::default();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.register(
+                &name,
+                &owner,
+                &None::<String>,
+                &None::<String>,
+                &100,
+                &1_000,
+                &2_000,
+            );
+        }));
+
+        assert!(result.is_err(), "registration without auth should fail");
+        assert_eq!(client.try_resolve(&name, &100), Ok(Err(RegistryError::NotFound)));
+    }
+
+    #[test]
+    fn rejects_transfer_without_caller_auth() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let next_owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        client.register(
+            &name,
+            &owner,
+            &None::<String>,
+            &None::<String>,
+            &100,
+            &1_000,
+            &2_000,
+        );
+
+        env.set_auths(&[]);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.transfer(&name, &owner, &next_owner, &101);
+        }));
+
+        assert!(result.is_err(), "transfer without auth should fail");
+        let resolved = client.resolve(&name, &101);
+        assert_eq!(resolved.owner, owner);
+        assert_eq!(client.names_for_owner(&next_owner).len(), 0);
     }
 }
