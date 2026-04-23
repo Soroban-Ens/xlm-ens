@@ -4,7 +4,9 @@ mod test;
 
 use expiry::expiry_from_now;
 use pricing::price_for_label_length;
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, Address, Env, IntoVal, String, Symbol,
+};
 use xlm_ns_common::soroban::{
     build_xlm_name, extract_label_soroban, validate_label_soroban,
     validate_registration_years_soroban,
@@ -37,6 +39,7 @@ enum DataKey {
     Registration(String),
     Reserved(String),
     Treasury,
+    Registry,
 }
 
 #[contracterror]
@@ -51,6 +54,7 @@ pub enum RegistrarError {
     Unauthorized = 6,
     Validation = 7,
     RegistrationClaimable = 8,
+    NotInitialized = 9,
 }
 
 #[contract]
@@ -58,6 +62,14 @@ pub struct RegistrarContract;
 
 #[contractimpl]
 impl RegistrarContract {
+    pub fn initialize(env: Env, registry: Address) -> Result<(), RegistrarError> {
+        if env.storage().instance().has(&DataKey::Registry) {
+            return Err(RegistrarError::Unauthorized);
+        }
+        env.storage().instance().set(&DataKey::Registry, &registry);
+        Ok(())
+    }
+
     pub fn reserve_label(env: Env, label: String) -> Result<(), RegistrarError> {
         validate_label_soroban(&label).map_err(|_| RegistrarError::Validation)?;
         env.storage()
@@ -115,7 +127,7 @@ impl RegistrarContract {
 
         let record = RegistrationRecord {
             name: name.clone(),
-            owner,
+            owner: owner.clone(),
             registered_at: now_unix,
             expires_at: quote.expiry_unix,
             grace_period_ends_at: quote.grace_period_ends_at,
@@ -124,7 +136,7 @@ impl RegistrarContract {
         };
         env.storage()
             .persistent()
-            .set(&DataKey::Registration(name), &record);
+            .set(&DataKey::Registration(name.clone()), &record);
         let treasury = env
             .storage()
             .persistent()
@@ -134,6 +146,28 @@ impl RegistrarContract {
             &DataKey::Treasury,
             &treasury.saturating_add(payment_stroops),
         );
+
+        let registry: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Registry)
+            .ok_or(RegistrarError::NotInitialized)?;
+
+        env.invoke_contract::<()>(
+            &registry,
+            &Symbol::new(&env, "register"),
+            (
+                name,
+                owner,
+                Option::<String>::None,
+                Option::<String>::None,
+                now_unix,
+                record.expires_at,
+                record.grace_period_ends_at,
+            )
+                .into_val(&env),
+        );
+
         Ok(())
     }
 
@@ -179,7 +213,7 @@ impl RegistrarContract {
         record.fee_paid = record.fee_paid.saturating_add(payment_stroops);
         env.storage()
             .persistent()
-            .set(&DataKey::Registration(name), &record);
+            .set(&DataKey::Registration(name.clone()), &record);
 
         let treasury = env
             .storage()
@@ -190,6 +224,26 @@ impl RegistrarContract {
             &DataKey::Treasury,
             &treasury.saturating_add(payment_stroops),
         );
+
+        let registry: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Registry)
+            .ok_or(RegistrarError::NotInitialized)?;
+
+        env.invoke_contract::<()>(
+            &registry,
+            &Symbol::new(&env, "renew"),
+            (
+                name,
+                caller,
+                record.expires_at,
+                record.grace_period_ends_at,
+                now_unix,
+            )
+                .into_val(&env),
+        );
+
         Ok(())
     }
 

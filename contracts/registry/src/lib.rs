@@ -176,7 +176,14 @@ impl RegistryContract {
         now_unix: u64,
     ) -> Result<(), RegistryError> {
         let mut entry = get_entry(&env, &name)?;
-        ensure_owner(&entry, &caller, now_unix)?;
+        // Allow renewal for the owner as long as the name has not become
+        // claimable (i.e. now <= grace_period_ends_at).
+        if entry.is_claimable_at(now_unix) {
+            return Err(RegistryError::NotActive);
+        }
+        if entry.owner != caller {
+            return Err(RegistryError::Unauthorized);
+        }
         entry.expires_at = expires_at;
         entry.grace_period_ends_at = grace_period_ends_at;
         put_entry(&env, &name, &entry);
