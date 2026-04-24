@@ -176,11 +176,21 @@ Shared validation currently enforces:
 - Bounded registration durations.
 - Non-empty owner and chain identifiers.
 
-## Local development
+## Quickstart
 
-Format the workspace:
+### Prerequisites
+
+- [Rust toolchain](https://rustup.rs/) (latest stable)
+- Wasm target: `rustup target add wasm32-unknown-unknown`
+- Soroban CLI (`cargo install --locked soroban-cli`)
+
+### Local setup
+
+Clone the repository and format the workspace:
 
 ```sh
+git clone https://github.com/0xVida/xlm-ens.git
+cd xlm-ens
 cargo fmt --all
 ```
 
