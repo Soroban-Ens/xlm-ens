@@ -31,6 +31,7 @@ pub enum ResolverError {
     TooManyTextRecords = 4,
 }
 
+#[contractclient(name = "ResolverContractClient")]
 #[contract]
 pub struct ResolverContract;
 
@@ -44,10 +45,14 @@ impl ResolverContract {
         now_unix: u64,
     ) -> Result<(), ResolverError> {
         validate_fqdn_soroban(&name).map_err(|_| ResolverError::Validation)?;
+        let text_records = match get_record(&env, &name) {
+            Ok(existing) => existing.text_records,
+            Err(_) => Map::new(&env),
+        };
         let record = ResolutionRecord {
             owner,
             address: address.clone(),
-            text_records: Map::new(&env),
+            text_records,
             updated_at: now_unix,
         };
         env.storage()
@@ -128,6 +133,17 @@ impl ResolverContract {
             .persistent()
             .get(&DataKey::Primary(address.clone()))
             .or_else(|| env.storage().persistent().get(&DataKey::Reverse(address)))
+    }
+}
+
+    pub fn transfer_record_owner(env: Env, name: String, caller: Address, new_owner: Address) -> Result<(), ResolverError> {
+        let mut record = get_record(&env, &name)?;
+        if record.owner != caller {
+            return Err(ResolverError::Unauthorized);
+        }
+        record.owner = new_owner;
+        put_record(&env, &name, &record);
+        Ok(())
     }
 }
 

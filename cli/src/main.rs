@@ -1,16 +1,21 @@
 mod commands;
 mod config;
+mod signer;
 
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 use config::Network;
+use signer::{load_profile, SignerProfile};
 use std::process;
 
+const BIN_NAME: &str = "xlm-ns";
+
 #[derive(Parser)]
-#[command(name = "xlm-ns")]
+#[command(name = BIN_NAME)]
 #[command(about = "XLM Name Service CLI", long_about = None)]
 struct Cli {
     /// Network to use (testnet, mainnet)
-    #[arg(short, long, default_value = "testnet")]
+    #[arg(short, long, default_value = "testnet", global = true)]
     network: String,
 
     #[command(subcommand)]
@@ -19,32 +24,67 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Register a new name
+    /// Register a new name.
+    ///
+    /// Signing material is never taken from the command line. Pass `--signer
+    /// <profile>` to select a profile; the public address is read from
+    /// `XLM_NS_SIGNER_<PROFILE>_PUBLIC` and the secret from
+    /// `XLM_NS_SIGNER_<PROFILE>_SECRET`.
     Register {
         /// Name to register
         name: String,
         /// Owner address
         owner: String,
+        /// Signer profile to use for submission
+        #[arg(long)]
+        signer: Option<String>,
     },
     /// Resolve a name to an address
     Resolve {
         /// Name to resolve
         name: String,
     },
-    /// Transfer ownership of a name
+    /// Reverse-resolve an address to its primary name.
+    ///
+    /// Requires the resolver contract (RESOLVER_CONTRACT_ID env var, or the
+    /// network default) to expose a reverse mapping entry for the address.
+    ReverseLookup {
+        /// Address to reverse-lookup
+        address: String,
+    },
+    /// Read or mutate resolver text records.
+    ///
+    /// Read and write operations target the resolver contract
+    /// (RESOLVER_CONTRACT_ID env var); write operations additionally require
+    /// a signer profile (see `register --help`).
+    #[command(subcommand)]
+    Text(TextCommand),
+    /// Transfer ownership of a name.
+    ///
+    /// `--signer <profile>` selects the account that will authorize the
+    /// transfer. See `register --help` for how signer profiles are loaded.
     Transfer {
         /// Name to transfer
         name: String,
         /// New owner address
         new_owner: String,
+        /// Signer profile to use for submission
+        #[arg(long)]
+        signer: Option<String>,
     },
-    /// Renew a name registration
+    /// Renew a name registration.
+    ///
+    /// `--signer <profile>` selects the account that will authorize the
+    /// renewal. See `register --help` for how signer profiles are loaded.
     Renew {
         /// Name to renew
         name: String,
         /// Additional years to renew for
         #[arg(default_value_t = 1)]
         years: u64,
+        /// Signer profile to use for submission
+        #[arg(long)]
+        signer: Option<String>,
     },
     /// Start or participate in an auction
     Auction {
@@ -54,59 +94,63 @@ enum Commands {
         #[arg(default_value_t = 0)]
         reserve: u64,
     },
-    /// Subdomain management commands
-    /// 
-    /// Subdomain flow:
-    /// 1. Register a parent domain: xlm-ns subdomain register-parent example.xlm <owner>
-    /// 2. Add controllers (optional): xlm-ns subdomain add-controller example.xlm <controller>
-    /// 3. Create subdomains: xlm-ns subdomain create sub example.xlm <owner>
-    /// 4. Transfer subdomains: xlm-ns subdomain transfer sub.example.xlm <new_owner>
-    Subdomain {
-        #[command(subcommand)]
-        command: SubdomainCommands,
+    /// Generate a shell completion script.
+    ///
+    /// Installation examples:
+    ///   bash:  xlm-ns completions bash > /etc/bash_completion.d/xlm-ns
+    ///   zsh:   xlm-ns completions zsh > "${fpath[1]}/_xlm-ns"
+    ///   fish:  xlm-ns completions fish > ~/.config/fish/completions/xlm-ns.fish
+    Completions {
+        /// Target shell
+        #[arg(value_enum)]
+        shell: Shell,
     },
 }
 
 #[derive(Subcommand)]
-enum SubdomainCommands {
-    /// Register a parent domain for subdomain management
-    /// This enables the parent domain owner to create and manage subdomains
-    RegisterParent {
-        /// Parent domain name (e.g., example.xlm)
-        parent: String,
-        /// Owner address for the parent domain
-        owner: String,
+enum TextCommand {
+    /// Read a text record value for a name.
+    Get {
+        /// Name to query
+        name: String,
+        /// Text record key (e.g. "url", "email", "avatar")
+        key: String,
     },
-    /// Add a controller to a parent domain
-    /// Controllers can create subdomains under the parent domain
-    AddController {
-        /// Parent domain name
-        parent: String,
-        /// Controller address to add (must be called by parent owner)
-        controller: String,
+    /// Write a text record value on a name.
+    ///
+    /// Omitting `<value>` clears the record. Requires a signer profile
+    /// (see `register --help`).
+    Set {
+        /// Name to update
+        name: String,
+        /// Text record key
+        key: String,
+        /// New value (omit to clear the record)
+        value: Option<String>,
+        /// Signer profile to use for submission
+        #[arg(long)]
+        signer: Option<String>,
     },
-    /// Create a subdomain under a registered parent
-    /// Can be called by parent owner or authorized controllers
-    Create {
-        /// Subdomain label (e.g., 'sub' for sub.example.xlm)
-        label: String,
-        /// Parent domain name
-        parent: String,
-        /// Owner address for the new subdomain
-        owner: String,
-    },
-    /// Transfer ownership of a subdomain
-    /// Can only be called by the current subdomain owner
-    Transfer {
-        /// Full subdomain name (e.g., sub.example.xlm)
-        fqdn: String,
-        /// New owner address
-        new_owner: String,
-    },
+}
+
+fn resolve_signer(name: Option<String>) -> Option<SignerProfile> {
+    let name = name?;
+    match load_profile(&name) {
+        Ok(profile) => Some(profile),
+        Err(err) => {
+            eprintln!("Error: {err}");
+            process::exit(1);
+        }
+    }
 }
 
 fn main() {
     let cli = Cli::parse();
+
+    if let Commands::Completions { shell } = cli.command {
+        commands::completions::run_completions::<Cli>(shell, BIN_NAME);
+        return;
+    }
 
     let network = match Network::parse(&cli.network) {
         Some(n) => n,
@@ -122,34 +166,37 @@ fn main() {
     let config = network.config();
 
     match cli.command {
-        Commands::Register { name, owner } => {
-            commands::register::run_register(config, &name, &owner);
+        Commands::Register { name, owner, signer } => {
+            commands::register::run_register(config, &name, &owner, resolve_signer(signer));
         }
         Commands::Resolve { name } => {
             commands::resolve::run_resolve(config, &name);
         }
-        Commands::Transfer { name, new_owner } => {
-            commands::transfer::run_transfer(config, &name, &new_owner);
+        Commands::ReverseLookup { address } => {
+            commands::reverse::run_reverse(config, &address);
         }
-        Commands::Renew { name, years } => {
-            commands::renew::run_renew(config, &name, years);
+        Commands::Text(sub) => match sub {
+            TextCommand::Get { name, key } => {
+                commands::text::run_get(config, &name, &key);
+            }
+            TextCommand::Set { name, key, value, signer } => {
+                commands::text::run_set(config, &name, &key, value, resolve_signer(signer));
+            }
+        },
+        Commands::Transfer { name, new_owner, signer } => {
+            commands::transfer::run_transfer(
+                config,
+                &name,
+                &new_owner,
+                resolve_signer(signer),
+            );
+        }
+        Commands::Renew { name, years, signer } => {
+            commands::renew::run_renew(config, &name, years, resolve_signer(signer));
         }
         Commands::Auction { name, reserve } => {
             commands::auction::run_auction(config, &name, reserve);
         }
-        Commands::Subdomain { command } => match command {
-            SubdomainCommands::RegisterParent { parent, owner } => {
-                commands::subdomain::run_register_parent(config, &parent, &owner);
-            }
-            SubdomainCommands::AddController { parent, controller } => {
-                commands::subdomain::run_add_controller(config, &parent, &controller);
-            }
-            SubdomainCommands::Create { label, parent, owner } => {
-                commands::subdomain::run_create_subdomain(config, &label, &parent, &owner);
-            }
-            SubdomainCommands::Transfer { fqdn, new_owner } => {
-                commands::subdomain::run_transfer_subdomain(config, &fqdn, &new_owner);
-            }
-        }
+        Commands::Completions { .. } => unreachable!("handled above"),
     }
 }
