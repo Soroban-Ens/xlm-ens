@@ -61,4 +61,26 @@ mod tests {
         }));
         assert!(result.is_err(), "post-removal create should fail");
     }
+
+    #[test]
+    fn prevents_parent_takeover() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let intruder = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &owner);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.register_parent(&parent, &intruder);
+        }));
+
+        assert!(result.is_err(), "intruder parent registration should fail");
+        
+        let parent_record = client.parent(&parent).unwrap();
+        assert_eq!(parent_record.owner, owner, "original owner should be preserved");
+    }
 }

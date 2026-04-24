@@ -41,15 +41,24 @@ pub struct SubdomainContract;
 
 #[contractimpl]
 impl SubdomainContract {
+    /// Registers a parent domain to enable subdomain creation.
+    /// 
+    /// Safe Bootstrap Path: The parent owner must register the parent domain
+    /// exactly once. Subsequent attempts to register the same parent domain
+    /// will be rejected to prevent unauthorized takeover of the parent namespace.
     pub fn register_parent(env: Env, parent: String, owner: Address) -> Result<(), SubdomainError> {
         validate_fqdn_soroban(&parent).map_err(|_| SubdomainError::Validation)?;
+        let key = DataKey::Parent(parent.clone());
+        if env.storage().persistent().has(&key) {
+            return Err(SubdomainError::AlreadyExists);
+        }
         let record = ParentDomain {
             owner,
             controllers: Vec::new(&env),
         };
         env.storage()
             .persistent()
-            .set(&DataKey::Parent(parent), &record);
+            .set(&key, &record);
         Ok(())
     }
 
