@@ -21,6 +21,10 @@ The target user experience is straightforward:
 - Premium names can be sold through auctions instead of first-come-first-served
   issuance.
 
+## Architecture
+
+For a detailed breakdown of state ownership, cross-contract flows, and synchronization rules, see the Architecture Documentation.
+
 ## Current status
 
 The workspace now contains real contract-domain logic instead of only placeholder
