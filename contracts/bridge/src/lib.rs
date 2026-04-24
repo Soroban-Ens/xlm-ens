@@ -33,6 +33,12 @@ impl BridgeContract {
     pub fn register_chain(env: Env, chain: String) -> Result<(), BridgeError> {
         validate_chain_name_soroban(&chain).map_err(|_| BridgeError::Validation)?;
         let route = target_for_chain(&env, &chain).ok_or(BridgeError::UnsupportedChain)?;
+
+        // Defensive check: Reject malformed route data
+        if route.destination_chain.len() == 0 || route.destination_resolver.len() == 0 || route.gateway.len() == 0 {
+            return Err(BridgeError::Validation);
+        }
+
         env.storage()
             .persistent()
             .set(&DataKey::Route(chain), &route);
