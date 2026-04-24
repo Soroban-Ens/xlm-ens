@@ -28,6 +28,7 @@ impl XlmNsClient {
         passphrase: Option<String>,
         registry_contract_id: Option<String>,
         subdomain_contract_id: Option<String>,
+        bridge_contract_id: Option<String>,
     ) -> Self {
         Self {
             rpc_url: rpc_url.into(),
@@ -318,5 +319,70 @@ impl XlmNsClient {
         }
         // Mock implementation
         Ok(())
+    }
+
+    // Bridge methods
+    pub fn register_chain(&self, request: RegisterChainRequest) -> Result<(), SdkError> {
+        if request.chain.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("chain must not be empty".into()));
+        }
+        // Validate supported chains
+        match request.chain.as_str() {
+            "base" | "ethereum" | "arbitrum" => {},
+            _ => return Err(SdkError::InvalidRequest(format!("unsupported chain: {}", request.chain))),
+        }
+        // Mock implementation
+        Ok(())
+    }
+
+    pub fn get_route(&self, chain: &str) -> Result<Option<BridgeRoute>, SdkError> {
+        if chain.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("chain must not be empty".into()));
+        }
+        // Mock implementation - return hardcoded routes
+        let route = match chain {
+            "base" => Some(BridgeRoute {
+                destination_chain: "base".to_string(),
+                destination_resolver: "0xbaseResolver".to_string(),
+                gateway: "0xbaseGateway".to_string(),
+            }),
+            "ethereum" => Some(BridgeRoute {
+                destination_chain: "ethereum".to_string(),
+                destination_resolver: "0xethResolver".to_string(),
+                gateway: "0xethGateway".to_string(),
+            }),
+            "arbitrum" => Some(BridgeRoute {
+                destination_chain: "arbitrum".to_string(),
+                destination_resolver: "0xarbResolver".to_string(),
+                gateway: "0xarbGateway".to_string(),
+            }),
+            _ => None,
+        };
+        Ok(route)
+    }
+
+    pub fn build_message(&self, request: BuildMessageRequest) -> Result<String, SdkError> {
+        if request.name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
+        }
+        if request.chain.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("chain must not be empty".into()));
+        }
+        // Check if chain is supported
+        if self.get_route(&request.chain)?.is_none() {
+            return Err(SdkError::InvalidRequest(format!("unsupported chain: {}", request.chain)));
+        }
+        // Mock implementation - build GMP message
+        let message = format!(
+            "{{\"type\":\"xlm-ns-resolution\",\"name\":\"{}\",\"destination_chain\":\"{}\",\"resolver\":\"{}\"}}",
+            request.name, request.chain,
+            match request.chain.as_str() {
+                "base" => "0xbaseResolver",
+                "ethereum" => "0xethResolver",
+                "arbitrum" => "0xarbResolver",
+                _ => unreachable!(),
+            }
+        );
+        Ok(message)
     }
 }

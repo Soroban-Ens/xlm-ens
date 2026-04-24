@@ -180,6 +180,25 @@ pub struct SubdomainRecord {
     pub created_at: u64,
 }
 
+// Bridge types
+#[derive(Debug, Clone)]
+pub struct RegisterChainRequest {
+    pub chain: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct BuildMessageRequest {
+    pub name: String,
+    pub chain: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct BridgeRoute {
+    pub destination_chain: String,
+    pub destination_resolver: String,
+    pub gateway: String,
+}
+
 // Contract types for RPC calls
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct RegistryEntry {

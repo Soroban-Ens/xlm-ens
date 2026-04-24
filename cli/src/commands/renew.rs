@@ -14,6 +14,7 @@ pub fn run_renew(
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
         Some(config.subdomain_contract_id),
+        Some(config.bridge_contract_id),
     );
 
     match client.get_registration(name) {

@@ -8,6 +8,7 @@ pub fn run_register_parent(config: NetworkConfig, parent: &str, owner: &str) {
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
         Some(config.subdomain_contract_id),
+        Some(config.bridge_contract_id),
     );
 
     match client.register_parent(RegisterParentRequest {
@@ -29,6 +30,7 @@ pub fn run_add_controller(config: NetworkConfig, parent: &str, controller: &str)
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
         Some(config.subdomain_contract_id),
+        Some(config.bridge_contract_id),
     );
 
     match client.add_controller(AddControllerRequest {
@@ -50,6 +52,7 @@ pub fn run_create_subdomain(config: NetworkConfig, label: &str, parent: &str, ow
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
         Some(config.subdomain_contract_id),
+        Some(config.bridge_contract_id),
     );
 
     match client.create_subdomain(CreateSubdomainRequest {
@@ -72,6 +75,7 @@ pub fn run_transfer_subdomain(config: NetworkConfig, fqdn: &str, new_owner: &str
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
         Some(config.subdomain_contract_id),
+        Some(config.bridge_contract_id),
     );
 
     match client.transfer_subdomain(TransferSubdomainRequest {

@@ -14,6 +14,7 @@ pub fn run_register(
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
         Some(config.subdomain_contract_id),
+        Some(config.bridge_contract_id),
     );
 
     let duration_years = 1;

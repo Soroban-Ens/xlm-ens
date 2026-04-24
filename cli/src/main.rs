@@ -105,6 +105,11 @@ enum Commands {
         #[arg(value_enum)]
         shell: Shell,
     },
+    /// Bridge management commands
+    Bridge {
+        #[command(subcommand)]
+        command: BridgeCommands,
+    },
 }
 
 #[derive(Subcommand)]
