@@ -7,6 +7,7 @@ pub fn run_renew(config: NetworkConfig, name: &str, years: u64) {
         config.rpc_url,
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
+        Some(config.subdomain_contract_id),
     );
 
     // 1. Fetch current registration to validate (mocked in SDK)
