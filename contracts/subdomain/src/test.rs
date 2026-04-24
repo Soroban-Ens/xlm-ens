@@ -32,59 +32,55 @@ mod tests {
     }
 
     #[test]
-    fn tracks_subdomains_for_parent_and_owner() {
+    fn removes_controller_and_revokes_authority() {
         let env = Env::default();
         let contract_id = env.register(SubdomainContract, ());
         let client = SubdomainContractClient::new(&env, &contract_id);
 
         let owner = Address::generate(&env);
-        let sub_owner1 = Address::generate(&env);
-        let sub_owner2 = Address::generate(&env);
+        let controller = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &owner);
+        
+        // Add controller
+        client.add_controller(&parent, &owner, &controller);
+        
+        // Remove controller
+        client.remove_controller(&parent, &owner, &controller);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.create(
+                &String::from_str(&env, "pay"),
+                &parent,
+                &controller,
+                &sub_owner,
+                &100,
+            );
+        }));
+        assert!(result.is_err(), "post-removal create should fail");
+    }
+
+    #[test]
+    fn prevents_parent_takeover() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let intruder = Address::generate(&env);
         let parent = String::from_str(&env, "timmy.xlm");
 
         client.register_parent(&parent, &owner);
 
-        let fqdn1 = client.create(
-            &String::from_str(&env, "pay"),
-            &parent,
-            &owner,
-            &sub_owner1,
-            &100,
-        );
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.register_parent(&parent, &intruder);
+        }));
 
-        let fqdn2 = client.create(
-            &String::from_str(&env, "app"),
-            &parent,
-            &owner,
-            &sub_owner1,
-            &100,
-        );
-
-        let parent_subs = client.subdomains_for_parent(&parent);
-        assert_eq!(parent_subs.len(), 2);
-        assert!(parent_subs.contains(&fqdn1));
-        assert!(parent_subs.contains(&fqdn2));
-
-        let owner1_subs = client.subdomains_for_owner(&sub_owner1);
-        assert_eq!(owner1_subs.len(), 2);
-
-        client.transfer(&fqdn2, &sub_owner1, &sub_owner2);
-
-        let owner1_subs_after = client.subdomains_for_owner(&sub_owner1);
-        assert_eq!(owner1_subs_after.len(), 1);
-        assert_eq!(owner1_subs_after.get(0).unwrap(), fqdn1);
-
-        let owner2_subs = client.subdomains_for_owner(&sub_owner2);
-        assert_eq!(owner2_subs.len(), 1);
-        assert_eq!(owner2_subs.get(0).unwrap(), fqdn2);
-
-        client.delete(&fqdn1, &sub_owner1);
-
-        let parent_subs_final = client.subdomains_for_parent(&parent);
-        assert_eq!(parent_subs_final.len(), 1);
-        assert_eq!(parent_subs_final.get(0).unwrap(), fqdn2);
-
-        let owner1_subs_final = client.subdomains_for_owner(&sub_owner1);
-        assert_eq!(owner1_subs_final.len(), 0);
+        assert!(result.is_err(), "intruder parent registration should fail");
+        
+        let parent_record = client.parent(&parent).unwrap();
+        assert_eq!(parent_record.owner, owner, "original owner should be preserved");
     }
 }

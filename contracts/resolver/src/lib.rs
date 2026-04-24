@@ -44,10 +44,14 @@ impl ResolverContract {
         now_unix: u64,
     ) -> Result<(), ResolverError> {
         validate_fqdn_soroban(&name).map_err(|_| ResolverError::Validation)?;
+        let text_records = match get_record(&env, &name) {
+            Ok(existing) => existing.text_records,
+            Err(_) => Map::new(&env),
+        };
         let record = ResolutionRecord {
             owner,
             address: address.clone(),
-            text_records: Map::new(&env),
+            text_records,
             updated_at: now_unix,
         };
         env.storage()
