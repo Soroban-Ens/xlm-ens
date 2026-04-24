@@ -25,6 +25,10 @@ The target user experience is straightforward:
 
 For a detailed breakdown of state ownership, cross-contract flows, and synchronization rules, see the Architecture Documentation.
 
+## Security and Threat Model
+
+For information regarding trust boundaries, admin powers, and open risks, please refer to the Security Assumptions and Threat Model.
+
 ## Current status
 
 The workspace now contains real contract-domain logic instead of only placeholder
