@@ -139,6 +139,21 @@ registration lifecycle:
 - Grace period: `expires_at < now <= grace_period_ends_at`
 - Claimable by a new owner: `now > grace_period_ends_at`
 
+## Release and recovery policy
+
+The current product policy is intentionally conservative:
+
+- Admin recovery is not supported in either the registrar or the registry.
+- There is no privileged forced transfer, forced burn, or emergency reassignment
+  path for a live name.
+- A name only becomes available for a new registrant after its normal expiry and
+  grace period have both elapsed.
+
+This keeps ownership and release behavior predictable while the contracts are
+still maturing. If a future version introduces an admin recovery mechanism, it
+must define explicit Soroban auth requirements, emit an auditable contract
+event trail, and document the governance process around who can invoke it.
+
 ## Registration flow
 
 The registration flow is now integrated on-chain:
@@ -161,11 +176,21 @@ Shared validation currently enforces:
 - Bounded registration durations.
 - Non-empty owner and chain identifiers.
 
-## Local development
+## Quickstart
 
-Format the workspace:
+### Prerequisites
+
+- [Rust toolchain](https://rustup.rs/) (latest stable)
+- Wasm target: `rustup target add wasm32-unknown-unknown`
+- Soroban CLI (`cargo install --locked soroban-cli`)
+
+### Local setup
+
+Clone the repository and format the workspace:
 
 ```sh
+git clone https://github.com/0xVida/xlm-ens.git
+cd xlm-ens
 cargo fmt --all
 ```
 

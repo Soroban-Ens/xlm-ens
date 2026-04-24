@@ -85,18 +85,104 @@ mod tests {
     }
 
     #[test]
-    fn prevents_nested_subdomain_as_parent() {
+    fn subdomain_owner_can_revoke() {
         let env = Env::default();
         let contract_id = env.register(SubdomainContract, ());
         let client = SubdomainContractClient::new(&env, &contract_id);
 
-        let owner = Address::generate(&env);
-        let invalid_parent = String::from_str(&env, "pay.timmy.xlm");
+        let parent_owner = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &parent_owner);
+        let fqdn = client.create(
+            &String::from_str(&env, "pay"),
+            &parent,
+            &parent_owner,
+            &sub_owner,
+            &100,
+        );
+
+        assert!(client.exists(&fqdn));
+        client.revoke(&fqdn, &sub_owner);
+        assert!(!client.exists(&fqdn));
+    }
+
+    #[test]
+    fn parent_owner_can_revoke() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let parent_owner = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &parent_owner);
+        let fqdn = client.create(
+            &String::from_str(&env, "pay"),
+            &parent,
+            &parent_owner,
+            &sub_owner,
+            &100,
+        );
+
+        assert!(client.exists(&fqdn));
+        client.revoke(&fqdn, &parent_owner);
+        assert!(!client.exists(&fqdn));
+    }
+
+    #[test]
+    fn parent_controller_can_revoke() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let parent_owner = Address::generate(&env);
+        let controller = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &parent_owner);
+        client.add_controller(&parent, &parent_owner, &controller);
+
+        let fqdn = client.create(
+            &String::from_str(&env, "pay"),
+            &parent,
+            &controller,
+            &sub_owner,
+            &100,
+        );
+
+        assert!(client.exists(&fqdn));
+        client.revoke(&fqdn, &controller);
+        assert!(!client.exists(&fqdn));
+    }
+
+    #[test]
+    fn unauthorized_caller_cannot_revoke() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let parent_owner = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let intruder = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &parent_owner);
+        let fqdn = client.create(
+            &String::from_str(&env, "pay"),
+            &parent,
+            &parent_owner,
+            &sub_owner,
+            &100,
+        );
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            client.register_parent(&invalid_parent, &owner);
+            client.revoke(&fqdn, &intruder);
         }));
-
-        assert!(result.is_err(), "nested subdomain registration as parent should fail");
+        assert!(result.is_err(), "unauthorized revocation should fail");
+        assert!(client.exists(&fqdn));
     }
 }

@@ -1,7 +1,8 @@
 mod test;
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
-use xlm_ns_common::soroban::{build_subdomain_name, validate_base_name_soroban, validate_fqdn_soroban};
+use xlm_ns_resolver::ResolverContractClient;
+use xlm_ns_common::soroban::{build_subdomain_name, validate_fqdn_soroban};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -23,6 +24,8 @@ pub struct SubdomainRecord {
 enum DataKey {
     Parent(String),
     Subdomain(String),
+    ParentSubdomains(String),
+    OwnerSubdomains(Address),
 }
 
 #[contracterror]
@@ -103,11 +106,15 @@ impl SubdomainContract {
         }
 
         let record = SubdomainRecord {
-            parent,
-            owner,
+            parent: parent.clone(),
+            owner: owner.clone(),
             created_at: now_unix,
         };
         env.storage().persistent().set(&key, &record);
+
+        add_parent_subdomain(&env, &parent, &fqdn);
+        add_owner_subdomain(&env, &owner, &fqdn);
+
         Ok(fqdn)
     }
 
@@ -121,10 +128,92 @@ impl SubdomainContract {
         if record.owner != caller {
             return Err(SubdomainError::Unauthorized);
         }
-        record.owner = new_owner;
+        let old_owner = record.owner.clone();
+        record.owner = new_owner.clone();
         env.storage()
             .persistent()
-            .set(&DataKey::Subdomain(fqdn), &record);
+            .set(&DataKey::Subdomain(fqdn.clone()), &record);
+
+        remove_owner_subdomain(&env, &old_owner, &fqdn);
+        add_owner_subdomain(&env, &new_owner, &fqdn);
+
+        Ok(())
+    }
+
+    pub fn delete(env: Env, fqdn: String, caller: Address) -> Result<(), SubdomainError> {
+        let record = get_subdomain(&env, &fqdn)?;
+        if record.owner != caller {
+            let parent_record = get_parent(&env, &record.parent)?;
+            if parent_record.owner != caller && !parent_record.controllers.contains(&caller) {
+                return Err(SubdomainError::Unauthorized);
+            }
+        }
+
+        remove_parent_subdomain(&env, &record.parent, &fqdn);
+        remove_owner_subdomain(&env, &record.owner, &fqdn);
+
+        env.storage().persistent().remove(&DataKey::Subdomain(fqdn));
+
+        Ok(())
+    }
+
+    /// Revokes a subdomain, removing it from storage.
+    ///
+    /// Deletion Semantics:
+    /// - The current owner of the subdomain can delete it.
+    /// - The owner or a delegated controller of the parent domain can revoke it
+    ///   (e.g., to reclaim the namespace or enforce namespace rules).
+    pub fn revoke(
+        env: Env,
+        fqdn: String,
+        caller: Address,
+    ) -> Result<(), SubdomainError> {
+        let record = get_subdomain(&env, &fqdn)?;
+
+        let mut is_authorized = false;
+        if record.owner == caller {
+            is_authorized = true;
+        } else if let Ok(parent_record) = get_parent(&env, &record.parent) {
+            if parent_record.owner == caller || parent_record.controllers.contains(&caller) {
+                is_authorized = true;
+            }
+        }
+
+        if !is_authorized {
+            return Err(SubdomainError::Unauthorized);
+        }
+
+        env.storage().persistent().remove(&DataKey::Subdomain(fqdn));
+        Ok(())
+    }
+
+    /// Revokes a subdomain, removing it from storage.
+    ///
+    /// Deletion Semantics:
+    /// - The current owner of the subdomain can delete it.
+    /// - The owner or a delegated controller of the parent domain can revoke it
+    ///   (e.g., to reclaim the namespace or enforce namespace rules).
+    pub fn revoke(
+        env: Env,
+        fqdn: String,
+        caller: Address,
+    ) -> Result<(), SubdomainError> {
+        let record = get_subdomain(&env, &fqdn)?;
+
+        let mut is_authorized = false;
+        if record.owner == caller {
+            is_authorized = true;
+        } else if let Ok(parent_record) = get_parent(&env, &record.parent) {
+            if parent_record.owner == caller || parent_record.controllers.contains(&caller) {
+                is_authorized = true;
+            }
+        }
+
+        if !is_authorized {
+            return Err(SubdomainError::Unauthorized);
+        }
+
+        env.storage().persistent().remove(&DataKey::Subdomain(fqdn));
         Ok(())
     }
 
@@ -138,6 +227,14 @@ impl SubdomainContract {
 
     pub fn record(env: Env, fqdn: String) -> Option<SubdomainRecord> {
         env.storage().persistent().get(&DataKey::Subdomain(fqdn))
+    }
+
+    pub fn subdomains_for_parent(env: Env, parent: String) -> Vec<String> {
+        get_parent_subdomains(&env, &parent)
+    }
+
+    pub fn subdomains_for_owner(env: Env, owner: Address) -> Vec<String> {
+        get_owner_subdomains(&env, &owner)
     }
 }
 
@@ -153,4 +250,58 @@ fn get_subdomain(env: &Env, fqdn: &String) -> Result<SubdomainRecord, SubdomainE
         .persistent()
         .get(&DataKey::Subdomain(fqdn.clone()))
         .ok_or(SubdomainError::NotFound)
+}
+
+fn get_parent_subdomains(env: &Env, parent: &String) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ParentSubdomains(parent.clone()))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+fn add_parent_subdomain(env: &Env, parent: &String, fqdn: &String) {
+    let mut subdomains = get_parent_subdomains(env, parent);
+    if !subdomains.contains(fqdn) {
+        subdomains.push_back(fqdn.clone());
+        env.storage()
+            .persistent()
+            .set(&DataKey::ParentSubdomains(parent.clone()), &subdomains);
+    }
+}
+
+fn remove_parent_subdomain(env: &Env, parent: &String, fqdn: &String) {
+    let mut subdomains = get_parent_subdomains(env, parent);
+    if let Some(index) = subdomains.first_index_of(fqdn) {
+        subdomains.remove(index);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ParentSubdomains(parent.clone()), &subdomains);
+    }
+}
+
+fn get_owner_subdomains(env: &Env, owner: &Address) -> Vec<String> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OwnerSubdomains(owner.clone()))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+fn add_owner_subdomain(env: &Env, owner: &Address, fqdn: &String) {
+    let mut subdomains = get_owner_subdomains(env, owner);
+    if !subdomains.contains(fqdn) {
+        subdomains.push_back(fqdn.clone());
+        env.storage()
+            .persistent()
+            .set(&DataKey::OwnerSubdomains(owner.clone()), &subdomains);
+    }
+}
+
+fn remove_owner_subdomain(env: &Env, owner: &Address, fqdn: &String) {
+    let mut subdomains = get_owner_subdomains(env, owner);
+    if let Some(index) = subdomains.first_index_of(fqdn) {
+        subdomains.remove(index);
+        env.storage()
+            .persistent()
+            .set(&DataKey::OwnerSubdomains(owner.clone()), &subdomains);
+    }
 }
