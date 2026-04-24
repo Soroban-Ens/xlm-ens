@@ -141,6 +141,45 @@ pub struct TransferRequest {
     pub signer: Option<String>,
 }
 
+// Subdomain types
+#[derive(Debug, Clone)]
+pub struct RegisterParentRequest {
+    pub parent: String,
+    pub owner: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AddControllerRequest {
+    pub parent: String,
+    pub controller: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateSubdomainRequest {
+    pub label: String,
+    pub parent: String,
+    pub owner: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TransferSubdomainRequest {
+    pub fqdn: String,
+    pub new_owner: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParentDomain {
+    pub owner: String,
+    pub controllers: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubdomainRecord {
+    pub parent: String,
+    pub owner: String,
+    pub created_at: u64,
+}
+
 // Contract types for RPC calls
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct RegistryEntry {

@@ -13,6 +13,7 @@ pub fn run_register(
         config.rpc_url,
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
+        Some(config.subdomain_contract_id),
     );
 
     let duration_years = 1;

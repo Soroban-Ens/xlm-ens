@@ -13,6 +13,7 @@ pub fn run_transfer(
         config.rpc_url,
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
+        Some(config.subdomain_contract_id),
     );
 
     println!("Initiating transfer of {name} to {new_owner}...");

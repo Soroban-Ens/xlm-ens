@@ -26,7 +26,8 @@ impl XlmNsClient {
     pub fn new(
         rpc_url: impl Into<String>,
         passphrase: Option<String>,
-        contract_id: Option<String>,
+        registry_contract_id: Option<String>,
+        subdomain_contract_id: Option<String>,
     ) -> Self {
         Self {
             rpc_url: rpc_url.into(),
@@ -269,5 +270,53 @@ impl XlmNsClient {
             network_passphrase: self.network_passphrase.clone(),
             signer: request.signer,
         })
+    }
+
+    // Subdomain methods
+    pub fn register_parent(&self, request: RegisterParentRequest) -> Result<(), SdkError> {
+        if request.parent.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("parent must not be empty".into()));
+        }
+        if request.owner.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("owner must not be empty".into()));
+        }
+        // Mock implementation
+        Ok(())
+    }
+
+    pub fn add_controller(&self, request: AddControllerRequest) -> Result<(), SdkError> {
+        if request.parent.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("parent must not be empty".into()));
+        }
+        if request.controller.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("controller must not be empty".into()));
+        }
+        // Mock implementation
+        Ok(())
+    }
+
+    pub fn create_subdomain(&self, request: CreateSubdomainRequest) -> Result<String, SdkError> {
+        if request.label.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("label must not be empty".into()));
+        }
+        if request.parent.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("parent must not be empty".into()));
+        }
+        if request.owner.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("owner must not be empty".into()));
+        }
+        // Mock implementation
+        Ok(format!("{}.{}", request.label, request.parent))
+    }
+
+    pub fn transfer_subdomain(&self, request: TransferSubdomainRequest) -> Result<(), SdkError> {
+        if request.fqdn.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("fqdn must not be empty".into()));
+        }
+        if request.new_owner.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("new_owner must not be empty".into()));
+        }
+        // Mock implementation
+        Ok(())
     }
 }
