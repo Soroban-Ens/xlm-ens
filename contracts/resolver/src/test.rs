@@ -205,4 +205,36 @@ mod tests {
         );
         assert_eq!(client.reverse(&String::from_str(&env, "GABC")), Some(name));
     }
+
+    #[test]
+    fn updating_address_preserves_text_records() {
+        let env = Env::default();
+        let contract_id = env.register(ResolverContract, ());
+        let client = ResolverContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+        let old_address = String::from_str(&env, "GABC");
+        let new_address = String::from_str(&env, "GDEF");
+
+        client.set_record(&name, &owner, &old_address, &100);
+        client.set_text_record(
+            &name,
+            &owner,
+            &String::from_str(&env, "com.twitter"),
+            &String::from_str(&env, "@timmy"),
+            &101,
+        );
+
+        client.set_record(&name, &owner, &new_address, &102);
+
+        let record = client.resolve(&name).unwrap();
+        assert_eq!(record.address, new_address);
+        assert_eq!(record.text_records.len(), 1);
+        assert_eq!(
+            record.text_records.get(String::from_str(&env, "com.twitter")),
+            Some(String::from_str(&env, "@timmy"))
+        );
+        assert_eq!(record.updated_at, 102);
+    }
 }
