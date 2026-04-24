@@ -186,6 +186,36 @@ impl SubdomainContract {
         Ok(())
     }
 
+    /// Revokes a subdomain, removing it from storage.
+    ///
+    /// Deletion Semantics:
+    /// - The current owner of the subdomain can delete it.
+    /// - The owner or a delegated controller of the parent domain can revoke it
+    ///   (e.g., to reclaim the namespace or enforce namespace rules).
+    pub fn revoke(
+        env: Env,
+        fqdn: String,
+        caller: Address,
+    ) -> Result<(), SubdomainError> {
+        let record = get_subdomain(&env, &fqdn)?;
+
+        let mut is_authorized = false;
+        if record.owner == caller {
+            is_authorized = true;
+        } else if let Ok(parent_record) = get_parent(&env, &record.parent) {
+            if parent_record.owner == caller || parent_record.controllers.contains(&caller) {
+                is_authorized = true;
+            }
+        }
+
+        if !is_authorized {
+            return Err(SubdomainError::Unauthorized);
+        }
+
+        env.storage().persistent().remove(&DataKey::Subdomain(fqdn));
+        Ok(())
+    }
+
     pub fn exists(env: Env, fqdn: String) -> bool {
         env.storage().persistent().has(&DataKey::Subdomain(fqdn))
     }
