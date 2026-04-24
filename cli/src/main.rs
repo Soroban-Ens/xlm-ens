@@ -65,6 +65,11 @@ enum Commands {
         #[command(subcommand)]
         command: SubdomainCommands,
     },
+    /// Bridge management commands
+    Bridge {
+        #[command(subcommand)]
+        command: BridgeCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -102,6 +107,27 @@ enum SubdomainCommands {
         fqdn: String,
         /// New owner address
         new_owner: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum BridgeCommands {
+    /// Register a bridge route for a supported chain
+    Register {
+        /// Chain name (base, ethereum, arbitrum)
+        chain: String,
+    },
+    /// Inspect bridge route for a chain
+    Inspect {
+        /// Chain name to inspect
+        chain: String,
+    },
+    /// Generate payload for cross-chain resolution
+    Payload {
+        /// Name to resolve
+        name: String,
+        /// Target chain
+        chain: String,
     },
 }
 
@@ -149,6 +175,17 @@ fn main() {
             }
             SubdomainCommands::Transfer { fqdn, new_owner } => {
                 commands::subdomain::run_transfer_subdomain(config, &fqdn, &new_owner);
+            }
+        }
+        Commands::Bridge { command } => match command {
+            BridgeCommands::Register { chain } => {
+                commands::bridge::run_register_chain(config, &chain);
+            }
+            BridgeCommands::Inspect { chain } => {
+                commands::bridge::run_inspect_route(config, &chain);
+            }
+            BridgeCommands::Payload { name, chain } => {
+                commands::bridge::run_generate_payload(config, &name, &chain);
             }
         }
     }

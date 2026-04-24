@@ -1,4 +1,5 @@
 pub mod auction;
+pub mod bridge;
 pub mod register;
 pub mod renew;
 pub mod resolve;

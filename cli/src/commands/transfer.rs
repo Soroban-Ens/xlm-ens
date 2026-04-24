@@ -8,6 +8,7 @@ pub fn run_transfer(config: NetworkConfig, name: &str, new_owner: &str) {
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
         Some(config.subdomain_contract_id),
+        Some(config.bridge_contract_id),
     );
 
     println!("Initiating transfer of {name} to {new_owner}...");
