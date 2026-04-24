@@ -83,4 +83,104 @@ mod tests {
         let parent_record = client.parent(&parent).unwrap();
         assert_eq!(parent_record.owner, owner, "original owner should be preserved");
     }
+
+    #[test]
+    fn rejects_duplicate_parent_registration() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &owner);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.register_parent(&parent, &owner);
+        }));
+        assert!(result.is_err(), "duplicate parent registration should fail");
+    }
+
+    #[test]
+    fn rejects_unauthorized_subdomain_creation() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let intruder = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &owner);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.create(
+                &String::from_str(&env, "pay"),
+                &parent,
+                &intruder,
+                &sub_owner,
+                &100,
+            );
+        }));
+        assert!(result.is_err(), "unauthorized create should fail");
+    }
+
+    #[test]
+    fn rejects_unauthorized_controller_addition() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let intruder = Address::generate(&env);
+        let controller = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &owner);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.add_controller(&parent, &intruder, &controller);
+        }));
+        assert!(result.is_err(), "intruder should not be able to add a controller");
+        
+        let parent_record = client.parent(&parent).unwrap();
+        assert!(!parent_record.controllers.contains(&controller));
+    }
+
+    #[test]
+    fn transfers_subdomain_ownership_and_queries_existence() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let new_sub_owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &owner);
+
+        let fqdn = client.create(
+            &String::from_str(&env, "pay"),
+            &parent,
+            &owner,
+            &sub_owner,
+            &100,
+        );
+
+        assert!(client.exists(&fqdn));
+        assert_eq!(client.record(&fqdn).unwrap().owner, sub_owner);
+
+        client.transfer(&fqdn, &sub_owner, &new_sub_owner);
+        assert_eq!(client.record(&fqdn).unwrap().owner, new_sub_owner);
+
+        let intruder = Address::generate(&env);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.transfer(&fqdn, &intruder, &new_sub_owner);
+        }));
+        assert!(result.is_err(), "unauthorized transfer should fail");
+        
+        assert_eq!(client.record(&fqdn).unwrap().owner, new_sub_owner);
+    }
 }

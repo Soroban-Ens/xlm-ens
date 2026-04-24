@@ -166,5 +166,3 @@ mod tests {
         assert_eq!(client.names_for_owner(&next_owner).len(), 0);
     }
 }
-/// Working on new cahnges
-///The code is working
