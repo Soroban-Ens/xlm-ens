@@ -21,6 +21,10 @@ The target user experience is straightforward:
 - Premium names can be sold through auctions instead of first-come-first-served
   issuance.
 
+## Architecture
+
+For a detailed breakdown of state ownership, cross-contract flows, and synchronization rules, see the Architecture Documentation.
+
 ## Current status
 
 The workspace now contains real contract-domain logic instead of only placeholder
@@ -134,6 +138,21 @@ registration lifecycle:
 - Active: `now <= expires_at`
 - Grace period: `expires_at < now <= grace_period_ends_at`
 - Claimable by a new owner: `now > grace_period_ends_at`
+
+## Release and recovery policy
+
+The current product policy is intentionally conservative:
+
+- Admin recovery is not supported in either the registrar or the registry.
+- There is no privileged forced transfer, forced burn, or emergency reassignment
+  path for a live name.
+- A name only becomes available for a new registrant after its normal expiry and
+  grace period have both elapsed.
+
+This keeps ownership and release behavior predictable while the contracts are
+still maturing. If a future version introduces an admin recovery mechanism, it
+must define explicit Soroban auth requirements, emit an auditable contract
+event trail, and document the governance process around who can invoke it.
 
 ## Registration flow
 
