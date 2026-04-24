@@ -67,11 +67,13 @@ fn subdomain_flow_covers_controller_delegation_transfer_and_resolution() {
     assert_eq!(resolved_before_transfer.address, first_address);
     assert_eq!(resolver.reverse(&first_address), Some(fqdn.clone()));
 
-    subdomain.transfer(&fqdn, &subdomain_owner, &next_owner);
+    // Transfer subdomain ownership, which also transfers resolver record ownership
+    subdomain.transfer(&fqdn, &subdomain_owner, &next_owner, &resolver_contract_id);
 
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            subdomain.transfer(&fqdn, &subdomain_owner, &controller);
+            // Old resolver record owner (subdomain_owner) should no longer be able to transfer resolver record ownership
+            resolver.transfer_record_owner(&fqdn, &subdomain_owner, &controller);
         }))
         .is_err(),
         "previous owner should not be able to transfer after ownership changes"
@@ -80,6 +82,16 @@ fn subdomain_flow_covers_controller_delegation_transfer_and_resolution() {
     let transferred_record = subdomain.record(&fqdn).unwrap();
     assert_eq!(transferred_record.owner, next_owner);
 
+    // Verify old subdomain owner cannot update resolver record
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            resolver.set_record(&fqdn, &subdomain_owner, &second_address, &103);
+        }))
+        .is_err(),
+        "old subdomain owner should not be able to update resolver record after transfer"
+    );
+
+    // New subdomain owner can now update resolver record
     resolver.set_record(&fqdn, &next_owner, &second_address, &103);
     resolver.set_primary_name(&second_address, &next_owner, &fqdn);
 
@@ -87,4 +99,11 @@ fn subdomain_flow_covers_controller_delegation_transfer_and_resolution() {
     assert_eq!(resolved_after_transfer.owner, next_owner);
     assert_eq!(resolved_after_transfer.address, second_address);
     assert_eq!(resolver.reverse(&second_address), Some(fqdn));
+
+    // Test deletion of subdomain and its effect on resolver (none, resolver record persists)
+    subdomain.delete(&fqdn, &next_owner);
+    assert!(!subdomain.exists(&fqdn));
+    // Resolver record should still exist, and only the last owner (next_owner) can modify it.
+    assert!(resolver.has_record(&fqdn));
+    assert_eq!(resolver.resolve(&fqdn).unwrap().owner, next_owner);
 }

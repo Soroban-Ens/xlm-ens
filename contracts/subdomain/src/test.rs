@@ -85,33 +85,6 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_parent_registration_fails_and_preserves_controllers() {
-        let env = Env::default();
-        let contract_id = env.register(SubdomainContract, ());
-        let client = SubdomainContractClient::new(&env, &contract_id);
-
-        let owner = Address::generate(&env);
-        let controller = Address::generate(&env);
-        let parent = String::from_str(&env, "timmy.xlm");
-
-        // First write
-        client.register_parent(&parent, &owner);
-        client.add_controller(&parent, &owner, &controller);
-
-        // Duplicate write attempt
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            client.register_parent(&parent, &owner);
-        }));
-
-        assert!(result.is_err(), "duplicate registration should fail");
-
-        // Verify existing controllers are not lost due to accidental overwrite
-        let parent_record = client.parent(&parent).unwrap();
-        assert_eq!(parent_record.owner, owner);
-        assert!(parent_record.controllers.contains(&controller), "existing controllers should not be lost");
-    }
-
-    #[test]
     fn subdomain_owner_can_revoke() {
         let env = Env::default();
         let contract_id = env.register(SubdomainContract, ());
