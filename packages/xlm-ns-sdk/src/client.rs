@@ -4,6 +4,9 @@ use crate::types::{
     RenewalRequest, ResolutionResult, ReverseResolution, SubmissionStatus, TextRecord,
     TextRecordUpdate, TransactionSubmission, TransferRequest, DEFAULT_FEE_CURRENCY,
 };
+use soroban_rpc::Client;
+use soroban_sdk::{xdr::{ScVal, ScVec, ScMap, ScMapEntry, ScString, Hash}, Address, Env, String as SorobanString};
+use std::{collections::HashMap, str::FromStr};
 
 const MOCK_REFERENCE_TIMESTAMP: u64 = 1_682_200_000;
 const SECONDS_PER_YEAR: u64 = 31_536_000;
@@ -45,6 +48,44 @@ impl XlmNsClient {
             resolver: self.resolver_contract_id.clone(),
             expires_at: Some(MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR),
         })
+    }
+
+    async fn query_registry(&self, client: &Client, contract_id: &str, name: &str) -> Result<RegistryEntry, SdkError> {
+        // For now, make a real RPC call to get network info to test transport
+        let _network = client.get_network().await
+            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
+
+        // Mock the registry entry for now
+        let entry = RegistryEntry {
+            name: name.to_string(),
+            owner: "mock_owner".to_string(),
+            resolver: Some("mock_resolver_id".to_string()),
+            target_address: None,
+            metadata_uri: None,
+            ttl_seconds: 3600,
+            registered_at: 0,
+            expires_at: 2000000000,
+            grace_period_ends_at: 2000003600,
+            transfer_count: 0,
+        };
+
+        Ok(entry)
+    }
+
+    async fn query_resolver(&self, client: &Client, contract_id: &str, name: &str) -> Result<Option<ResolutionRecord>, SdkError> {
+        // Make another RPC call to test transport
+        let _network = client.get_network().await
+            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
+
+        // Mock the record
+        let record = ResolutionRecord {
+            owner: "mock_owner".to_string(),
+            address: "GDRA...REAL_ADDR".to_string(),
+            text_records: std::collections::HashMap::new(),
+            updated_at: 0,
+        };
+
+        Ok(Some(record))
     }
 
     pub fn get_registration(&self, name: &str) -> Result<Option<ResolutionResult>, SdkError> {
