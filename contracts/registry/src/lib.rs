@@ -58,7 +58,13 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
-    #[allow(clippy::too_many_arguments)]
+    // Mutating entrypoints require Soroban auth from the address that is
+    // authorizing the state change, rather than relying on address equality
+    // checks alone.
+    //
+    // Release policy: this registry does not support admin recovery or forced
+    // reassignment. Names can only leave an owner-controlled state through the
+    // normal expiry and grace-period flow.
     pub fn register(
         env: Env,
         name: String,
