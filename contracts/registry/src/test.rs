@@ -165,4 +165,13 @@ mod tests {
         assert_eq!(resolved.owner, owner);
         assert_eq!(client.names_for_owner(&next_owner).len(), 0);
     }
+
+    #[test]
+    fn declares_that_admin_recovery_is_not_supported() {
+        let env = Env::default();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        assert!(!client.supports_admin_recovery());
+    }
 }

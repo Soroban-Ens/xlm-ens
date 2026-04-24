@@ -13,6 +13,8 @@ use xlm_ns_common::soroban::{
 };
 use xlm_ns_common::GRACE_PERIOD_SECONDS;
 
+pub const ADMIN_RECOVERY_SUPPORTED: bool = false;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct RegistrationQuote {
@@ -268,6 +270,10 @@ impl RegistrarContract {
             .persistent()
             .get(&DataKey::Treasury)
             .unwrap_or(0)
+    }
+
+    pub fn supports_admin_recovery(_env: Env) -> bool {
+        ADMIN_RECOVERY_SUPPORTED
     }
 }
 
