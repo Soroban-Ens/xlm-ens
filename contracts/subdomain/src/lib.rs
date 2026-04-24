@@ -1,7 +1,7 @@
 mod test;
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
-use xlm_ns_common::soroban::{build_subdomain_name, validate_fqdn_soroban};
+use xlm_ns_common::soroban::{build_subdomain_name, validate_base_name_soroban, validate_fqdn_soroban};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -48,6 +48,7 @@ impl SubdomainContract {
     /// will be rejected to prevent unauthorized takeover of the parent namespace.
     pub fn register_parent(env: Env, parent: String, owner: Address) -> Result<(), SubdomainError> {
         validate_fqdn_soroban(&parent).map_err(|_| SubdomainError::Validation)?;
+        validate_base_name_soroban(&parent).map_err(|_| SubdomainError::Validation)?;
         let key = DataKey::Parent(parent.clone());
         if env.storage().persistent().has(&key) {
             return Err(SubdomainError::AlreadyExists);
