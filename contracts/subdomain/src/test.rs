@@ -30,4 +30,35 @@ mod tests {
         assert!(client.exists(&fqdn));
         assert_eq!(client.record(&fqdn).unwrap().owner, sub_owner);
     }
+
+    #[test]
+    fn removes_controller_and_revokes_authority() {
+        let env = Env::default();
+        let contract_id = env.register(SubdomainContract, ());
+        let client = SubdomainContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let controller = Address::generate(&env);
+        let sub_owner = Address::generate(&env);
+        let parent = String::from_str(&env, "timmy.xlm");
+
+        client.register_parent(&parent, &owner);
+        
+        // Add controller
+        client.add_controller(&parent, &owner, &controller);
+        
+        // Remove controller
+        client.remove_controller(&parent, &owner, &controller);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.create(
+                &String::from_str(&env, "pay"),
+                &parent,
+                &controller,
+                &sub_owner,
+                &100,
+            );
+        }));
+        assert!(result.is_err(), "post-removal create should fail");
+    }
 }
