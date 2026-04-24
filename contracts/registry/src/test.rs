@@ -109,6 +109,42 @@ mod tests {
     }
 
     #[test]
+    fn rejects_renewal_that_reduces_expiry_or_grace_period() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        client.register(
+            &name,
+            &owner,
+            &None::<String>,
+            &None::<String>,
+            &100,
+            &200,
+            &300,
+        );
+
+        // Try to reduce expiry but keep it valid otherwise (e.g. >= now)
+        // now = 100, entry expires at 200. Let's try to renew with expires_at = 150
+        let reduced_expiry = client.try_renew(&name, &owner, &150, &300, &100);
+        assert_eq!(reduced_expiry, Ok(Err(RegistryError::InvalidExpiry)));
+
+        // Try to reduce grace period but keep it valid otherwise
+        let reduced_grace = client.try_renew(&name, &owner, &250, &280, &100);
+        assert_eq!(reduced_grace, Ok(Err(RegistryError::InvalidGracePeriod)));
+
+        // Valid extension
+        client.renew(&name, &owner, &300, &400, &100);
+        let entry = client.resolve(&name, &100);
+        assert_eq!(entry.expires_at, 300);
+        assert_eq!(entry.grace_period_ends_at, 400);
+    }
+
+    #[test]
     fn rejects_registration_without_owner_auth() {
         let env = Env::default();
         let contract_id = env.register(RegistryContract, ());

@@ -201,6 +201,15 @@ impl RegistryContract {
         if entry.owner != caller {
             return Err(RegistryError::Unauthorized);
         }
+
+        if expires_at < entry.expires_at {
+            return Err(RegistryError::InvalidExpiry);
+        }
+        if grace_period_ends_at < entry.grace_period_ends_at {
+            return Err(RegistryError::InvalidGracePeriod);
+        }
+        validate_lifecycle_timestamps(now_unix, expires_at, grace_period_ends_at)?;
+
         entry.expires_at = expires_at;
         entry.grace_period_ends_at = grace_period_ends_at;
         put_entry(&env, &name, &entry);
