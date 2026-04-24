@@ -1,6 +1,7 @@
 mod test;
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
+use xlm_ns_resolver::ResolverContractClient;
 use xlm_ns_common::soroban::{build_subdomain_name, validate_fqdn_soroban};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
