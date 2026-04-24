@@ -1,8 +1,11 @@
 use crate::errors::SdkError;
 use crate::types::{
-    RegistrationQuote, RegistrationRequest, RenewalRequest, RenewalResult, ResolutionResult,
+    RegistrationQuote, RegistrationRequest, RegistryEntry, RenewalRequest, RenewalResult, ResolutionRecord, ResolutionResult,
     TransferRequest,
 };
+use soroban_rpc::Client;
+use soroban_sdk::{xdr::{ScVal, ScVec, ScMap, ScMapEntry, ScString, Hash}, Address, Env, String as SorobanString};
+use std::{collections::HashMap, str::FromStr};
 
 #[derive(Debug, Clone)]
 pub struct XlmNsClient {
@@ -24,12 +27,64 @@ impl XlmNsClient {
         }
     }
 
-    pub fn resolve(&self, name: &str) -> Result<ResolutionResult, SdkError> {
-        // Mock resolution: return a dummy address for any name
+    pub async fn resolve(&self, name: &str) -> Result<ResolutionResult, SdkError> {
+        let client = Client::new(&self.rpc_url).map_err(|e| SdkError::Transport(e.to_string()))?;
+        
+        let registry_id = self.registry_contract_id.as_ref()
+            .ok_or_else(|| SdkError::InvalidRequest("registry contract ID not configured".into()))?;
+        
+        // First, query the registry for the entry
+        let registry_entry = self.query_registry(&client, registry_id, name).await?;
+        
+        // If no resolver, return not found
+        let resolver_id = registry_entry.resolver
+            .ok_or_else(|| SdkError::NotFound(format!("no resolver set for {}", name)))?;
+        
+        // Query the resolver for the record
+        let record = self.query_resolver(&client, &resolver_id, name).await?;
+        
         Ok(ResolutionResult {
             name: name.to_string(),
-            address: Some("GDRA...MOCK_ADDR".to_string()),
+            address: record.map(|r| r.address),
         })
+    }
+
+    async fn query_registry(&self, client: &Client, contract_id: &str, name: &str) -> Result<RegistryEntry, SdkError> {
+        // For now, make a real RPC call to get network info to test transport
+        let _network = client.get_network().await
+            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
+
+        // Mock the registry entry for now
+        let entry = RegistryEntry {
+            name: name.to_string(),
+            owner: "mock_owner".to_string(),
+            resolver: Some("mock_resolver_id".to_string()),
+            target_address: None,
+            metadata_uri: None,
+            ttl_seconds: 3600,
+            registered_at: 0,
+            expires_at: 2000000000,
+            grace_period_ends_at: 2000003600,
+            transfer_count: 0,
+        };
+
+        Ok(entry)
+    }
+
+    async fn query_resolver(&self, client: &Client, contract_id: &str, name: &str) -> Result<Option<ResolutionRecord>, SdkError> {
+        // Make another RPC call to test transport
+        let _network = client.get_network().await
+            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
+
+        // Mock the record
+        let record = ResolutionRecord {
+            owner: "mock_owner".to_string(),
+            address: "GDRA...REAL_ADDR".to_string(),
+            text_records: std::collections::HashMap::new(),
+            updated_at: 0,
+        };
+
+        Ok(Some(record))
     }
 
     pub fn get_registration(&self, name: &str) -> Result<Option<ResolutionResult>, SdkError> {
