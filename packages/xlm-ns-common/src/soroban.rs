@@ -34,7 +34,7 @@ pub fn validate_chain_name_soroban(chain: &String) -> Result<(), CommonError> {
     Ok(())
 }
 
-pub fn validate_fqdn_soroban(name: &String) -> Result<(), CommonError> {
+pub fn validate_base_name_soroban(name: &String) -> Result<(), CommonError> {
     let (bytes, len) = copy_bytes::<MAX_FQDN_LENGTH>(name)?;
     let dot_index = bytes[..len]
         .iter()
@@ -48,6 +48,24 @@ pub fn validate_fqdn_soroban(name: &String) -> Result<(), CommonError> {
     validate_label_bytes(&bytes[..dot_index])?;
     if &bytes[dot_index + 1..len] != b"xlm" {
         return Err(CommonError::UnsupportedTld);
+    }
+
+    Ok(())
+}
+
+pub fn validate_fqdn_soroban(name: &String) -> Result<(), CommonError> {
+    let (bytes, len) = copy_bytes::<MAX_FQDN_LENGTH>(name)?;
+    let dot_index = bytes[..len]
+        .iter()
+        .rposition(|byte| *byte == b'.')
+        .ok_or(CommonError::MissingTld)?;
+
+    if &bytes[dot_index + 1..len] != b"xlm" {
+        return Err(CommonError::UnsupportedTld);
+    }
+
+    for label in bytes[..dot_index].split(|b| *b == b'.') {
+        validate_label_bytes(label)?;
     }
 
     Ok(())
