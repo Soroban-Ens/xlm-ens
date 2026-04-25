@@ -10,6 +10,22 @@ mod auction_integration {
         (env, client)
     }
 
+    struct TimeHelper {
+        pub now: u64,
+    }
+
+    impl TimeHelper {
+        pub fn new(start: u64) -> Self {
+            Self { now: start }
+        }
+        pub fn advance(&mut self, seconds: u64) {
+            self.now += seconds;
+        }
+        pub fn future(&self, seconds: u64) -> u64 {
+            self.now + seconds
+        }
+    }
+
     /// Test covers create, bid, settle, and winner inspection matching Vickrey policy.
     #[test]
     fn test_auction_vickrey_settlement() {
@@ -18,8 +34,9 @@ mod auction_integration {
 
         let name = String::from_str(&env, "premium.xlm");
         let reserve_price = 100;
-        let starts_at = 1000;
-        let ends_at = 2000;
+        let mut time = TimeHelper::new(1000);
+        let starts_at = time.now;
+        let ends_at = time.future(1000);
 
         // Create auction
         client.create_auction(&name, &reserve_price, &starts_at, &ends_at);
@@ -29,12 +46,13 @@ mod auction_integration {
         let charlie = Address::generate(&env);
 
         // Place bids
-        client.place_bid(&name, &alice, &500, &1100);
-        client.place_bid(&name, &bob, &800, &1200);     // Highest bid
-        client.place_bid(&name, &charlie, &600, &1300); // Second highest bid
+        client.place_bid(&name, &alice, &500, &time.future(100));
+        client.place_bid(&name, &bob, &800, &time.future(200));     // Highest bid
+        client.place_bid(&name, &charlie, &600, &time.future(300)); // Second highest bid
 
         // Settle auction after ends_at
-        let settlement = client.settle(&name, &2001).expect("settlement expected");
+        time.advance(1001);
+        let settlement = client.settle(&name, &time.now).expect("settlement expected");
 
         // Bob should win and pay Charlie's bid amount (Vickrey second-price)
         assert_eq!(settlement.winner, Some(bob));
@@ -51,8 +69,9 @@ mod auction_integration {
 
         let name = String::from_str(&env, "unsold.xlm");
         let reserve_price = 1000;
-        let starts_at = 1000;
-        let ends_at = 2000;
+        let mut time = TimeHelper::new(1000);
+        let starts_at = time.now;
+        let ends_at = time.future(1000);
 
         client.create_auction(&name, &reserve_price, &starts_at, &ends_at);
 
@@ -60,10 +79,11 @@ mod auction_integration {
         let bob = Address::generate(&env);
 
         // Place bids below reserve
-        client.place_bid(&name, &alice, &500, &1100);
-        client.place_bid(&name, &bob, &900, &1200);
+        client.place_bid(&name, &alice, &500, &time.future(100));
+        client.place_bid(&name, &bob, &900, &time.future(200));
 
-        let settlement = client.settle(&name, &2001).expect("settlement expected");
+        time.advance(1001);
+        let settlement = client.settle(&name, &time.now).expect("settlement expected");
 
         // Auction should not be sold
         assert_eq!(settlement.winner, None);
@@ -80,12 +100,16 @@ mod auction_integration {
 
         let name = String::from_str(&env, "single.xlm");
         let reserve_price = 500;
-        client.create_auction(&name, &reserve_price, &1000, &2000);
+        let mut time = TimeHelper::new(1000);
+        let starts_at = time.now;
+        let ends_at = time.future(1000);
+        client.create_auction(&name, &reserve_price, &starts_at, &ends_at);
         
         let alice = Address::generate(&env);
-        client.place_bid(&name, &alice, &1000, &1500);
+        client.place_bid(&name, &alice, &1000, &time.future(500));
 
-        let settlement = client.settle(&name, &2001).expect("settlement expected");
+        time.advance(1001);
+        let settlement = client.settle(&name, &time.now).expect("settlement expected");
         assert_eq!(settlement.winner, Some(alice));
         assert_eq!(settlement.clearing_price, 500); // Clears at reserve
         assert!(settlement.sold);
