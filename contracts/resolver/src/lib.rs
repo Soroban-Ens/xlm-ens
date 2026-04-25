@@ -134,9 +134,13 @@ impl ResolverContract {
             .get(&DataKey::Primary(address.clone()))
             .or_else(|| env.storage().persistent().get(&DataKey::Reverse(address)))
     }
-}
 
-    pub fn transfer_record_owner(env: Env, name: String, caller: Address, new_owner: Address) -> Result<(), ResolverError> {
+    pub fn transfer_record_owner(
+        env: Env,
+        name: String,
+        caller: Address,
+        new_owner: Address,
+    ) -> Result<(), ResolverError> {
         let mut record = get_record(&env, &name)?;
         if record.owner != caller {
             return Err(ResolverError::Unauthorized);
