@@ -64,6 +64,10 @@ pub struct RegistrarContract;
 
 #[contractimpl]
 impl RegistrarContract {
+    pub fn initialize(env: Env, registry: Address) {
+        env.storage().instance().set(&DataKey::Registry, &registry);
+    }
+
     // Release policy: registrations are only released through the normal
     // expiry-plus-grace lifecycle. This contract does not expose an admin
     // recovery or forced-release override.
@@ -94,6 +98,8 @@ impl RegistrarContract {
         payment_stroops: u64,
         now_unix: u64,
     ) -> Result<(), RegistrarError> {
+        owner.require_auth();
+
         validate_label_soroban(&label).map_err(|_| RegistrarError::Validation)?;
         validate_registration_years_soroban(years).map_err(|_| RegistrarError::Validation)?;
 

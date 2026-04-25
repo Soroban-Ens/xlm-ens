@@ -65,6 +65,9 @@ impl RegistryContract {
     // Release policy: this registry does not support admin recovery or forced
     // reassignment. Names can only leave an owner-controlled state through the
     // normal expiry and grace-period flow.
+    ///
+    /// Registers a new name, setting its initial lifecycle and ownership.
+    /// This expects cross-contract authorization from the caller via the Registrar.
     pub fn register(
         env: Env,
         name: String,
