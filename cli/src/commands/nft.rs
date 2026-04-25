@@ -3,11 +3,11 @@ use crate::output::{emit, emit_error, OutputFormat};
 use serde_json::json;
 use xlm_ns_sdk::client::XlmNsClient;
 
-pub fn run_inspect(config: NetworkConfig, output: OutputFormat, token_id: &str) {
+pub async fn run_inspect(config: NetworkConfig, output: OutputFormat, token_id: &str) -> anyhow::Result<()> {
     let nft_contract_id = config
         .nft_contract_id
         .clone()
-        .expect("nft command validated nft contract id");
+        .ok_or_else(|| anyhow::anyhow!("NFT contract ID not configured"))?;
 
     let client = XlmNsClient::new(
         config.rpc_url.clone(),
@@ -15,6 +15,7 @@ pub fn run_inspect(config: NetworkConfig, output: OutputFormat, token_id: &str) 
         config.registry_contract_id.clone(),
         config.subdomain_contract_id.clone(),
         config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     )
     .with_nft(nft_contract_id.clone());
 
@@ -54,4 +55,5 @@ pub fn run_inspect(config: NetworkConfig, output: OutputFormat, token_id: &str) 
             );
         }
     }
+    Ok(())
 }
