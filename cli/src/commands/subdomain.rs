@@ -7,10 +7,10 @@ pub async fn run_register_parent(config: NetworkConfig, parent: &str, owner: &st
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id),
-        Some(config.subdomain_contract_id),
-        Some(config.bridge_contract_id),
-        Some(config.auction_contract_id),
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     );
 
     client
@@ -29,10 +29,10 @@ pub async fn run_add_controller(config: NetworkConfig, parent: &str, controller:
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id),
-        Some(config.subdomain_contract_id),
-        Some(config.bridge_contract_id),
-        Some(config.auction_contract_id),
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     );
 
     client
@@ -51,10 +51,10 @@ pub async fn run_create_subdomain(config: NetworkConfig, label: &str, parent: &s
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id),
-        Some(config.subdomain_contract_id),
-        Some(config.bridge_contract_id),
-        Some(config.auction_contract_id),
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     );
 
     let fqdn = client
@@ -74,10 +74,10 @@ pub async fn run_transfer_subdomain(config: NetworkConfig, fqdn: &str, new_owner
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id),
-        Some(config.subdomain_contract_id),
-        Some(config.bridge_contract_id),
-        Some(config.auction_contract_id),
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     );
 
     client

@@ -1,12 +1,15 @@
 mod commands;
 mod config;
+mod output;
 mod signer;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
-use config::Network;
+use config::{load_config, ContractKind, ContractOverrides, Network, ResolveOptions};
+use output::OutputFormat;
 use signer::{load_profile, SignerProfile};
+use std::path::PathBuf;
 use std::process;
 
 const BIN_NAME: &str = "xlm-ns";
@@ -15,9 +18,46 @@ const BIN_NAME: &str = "xlm-ns";
 #[command(name = BIN_NAME)]
 #[command(about = "XLM Name Service CLI", long_about = None)]
 struct Cli {
-    /// Network to use (testnet, mainnet)
+    /// Network to use (`testnet` or `mainnet`)
     #[arg(short, long, default_value = "testnet", global = true)]
     network: String,
+
+    /// Config file path. Falls back to `XLM_NS_CONFIG`, then the documented search path.
+    #[arg(long, global = true)]
+    config: Option<PathBuf>,
+
+    /// Output format for command results.
+    #[arg(long, value_enum, default_value_t = OutputFormat::Human, global = true)]
+    output: OutputFormat,
+
+    /// Override the Soroban RPC URL.
+    #[arg(long, global = true)]
+    rpc_url: Option<String>,
+
+    /// Override the Soroban network passphrase.
+    #[arg(long, global = true)]
+    network_passphrase: Option<String>,
+
+    #[arg(long, global = true)]
+    registry_contract_id: Option<String>,
+
+    #[arg(long, global = true)]
+    registrar_contract_id: Option<String>,
+
+    #[arg(long, global = true)]
+    resolver_contract_id: Option<String>,
+
+    #[arg(long, global = true)]
+    auction_contract_id: Option<String>,
+
+    #[arg(long, global = true)]
+    bridge_contract_id: Option<String>,
+
+    #[arg(long, global = true)]
+    subdomain_contract_id: Option<String>,
+
+    #[arg(long, global = true)]
+    nft_contract_id: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -35,7 +75,7 @@ enum Commands {
         #[arg(long)]
         signer: Option<String>,
     },
-    /// Resolve a name to an address
+    /// Resolve a name to an address.
     Resolve {
         /// Name to resolve
         name: String,
@@ -78,7 +118,7 @@ enum Commands {
         #[arg(value_enum)]
         shell: Shell,
     },
-    /// Bridge management commands
+    /// Bridge management commands.
     Bridge {
         #[command(subcommand)]
         command: BridgeCommands,
@@ -87,6 +127,21 @@ enum Commands {
     Subdomain {
         #[command(subcommand)]
         command: SubdomainCommands,
+    },
+    /// Inspect NFT ownership metadata.
+    Nft {
+        #[command(subcommand)]
+        command: NftCommands,
+    },
+    /// Show registration details for a single name.
+    Whois {
+        /// Name to inspect
+        name: String,
+    },
+    /// List names owned by an address.
+    Portfolio {
+        /// Owner address to inspect
+        owner: String,
     },
 }
 
@@ -187,23 +242,20 @@ enum SubdomainCommands {
 }
 
 #[derive(Subcommand)]
+enum NftCommands {
+    /// Inspect the owner and metadata for a token id.
+    Inspect { token_id: String },
+}
+
+#[derive(Subcommand)]
 enum TextCommand {
     /// Read a text record value for a name.
-    Get {
-        /// Name to query
-        name: String,
-        /// Text record key (e.g. "url", "email", "avatar")
-        key: String,
-    },
+    Get { name: String, key: String },
     /// Write a text record value on a name.
     Set {
-        /// Name to update
         name: String,
-        /// Text record key
         key: String,
-        /// New value (omit to clear the record)
         value: Option<String>,
-        /// Signer profile to use for submission
         #[arg(long)]
         signer: Option<String>,
     },
@@ -228,7 +280,29 @@ async fn run() -> anyhow::Result<()> {
     let network = Network::parse(&cli.network)
         .with_context(|| format!("invalid network '{}'", cli.network))?;
 
-    let config = network.config();
+    let contract_overrides = ContractOverrides {
+        registry_contract_id: cli.registry_contract_id.clone(),
+        registrar_contract_id: cli.registrar_contract_id.clone(),
+        resolver_contract_id: cli.resolver_contract_id.clone(),
+        auction_contract_id: cli.auction_contract_id.clone(),
+        bridge_contract_id: cli.bridge_contract_id.clone(),
+        subdomain_contract_id: cli.subdomain_contract_id.clone(),
+        nft_contract_id: cli.nft_contract_id.clone(),
+    };
+
+    let config = load_config(
+        network,
+        ResolveOptions {
+            config_path: cli.config.clone(),
+            rpc_url: cli.rpc_url.clone(),
+            network_passphrase: cli.network_passphrase.clone(),
+            contract_overrides: contract_overrides.clone(),
+        },
+    ).context("failed to load configuration")?;
+
+    if let Err(err) = validate_contract_policy(&cli.command, &contract_overrides, &config) {
+        return Err(anyhow::anyhow!(err));
+    }
 
     match cli.command {
         Commands::Register { name, owner, signer } => {
@@ -293,6 +367,17 @@ async fn run() -> anyhow::Result<()> {
                 commands::subdomain::run_transfer_subdomain(config, &fqdn, &new_owner).await
             }
         },
+        Commands::Nft { command } => match command {
+            NftCommands::Inspect { token_id } => {
+                commands::nft::run_inspect(config, cli.output, &token_id).await
+            }
+        },
+        Commands::Whois { name } => {
+            commands::whois::run_whois(config, cli.output, &name).await
+        }
+        Commands::Portfolio { owner } => {
+            commands::portfolio::run_portfolio(config, cli.output, &owner).await
+        }
         Commands::Completions { .. } => unreachable!("handled above"),
     }
 }
@@ -303,4 +388,85 @@ async fn main() {
         eprintln!("Error: {:?}", e);
         process::exit(1);
     }
+}
+
+fn validate_contract_policy(
+    command: &Commands,
+    overrides: &ContractOverrides,
+    config: &config::NetworkConfig,
+) -> Result<(), String> {
+    let (command_name, allowed, required): (&str, &[ContractKind], &[ContractKind]) = match command
+    {
+        Commands::Register { .. } => (
+            "register",
+            &[ContractKind::Registrar],
+            &[ContractKind::Registrar],
+        ),
+        Commands::Resolve { .. } => (
+            "resolve",
+            &[ContractKind::Resolver],
+            &[ContractKind::Resolver],
+        ),
+        Commands::ReverseLookup { .. } => (
+            "reverse-lookup",
+            &[ContractKind::Resolver],
+            &[ContractKind::Resolver],
+        ),
+        Commands::Text(_) => ("text", &[ContractKind::Resolver], &[ContractKind::Resolver]),
+        Commands::Transfer { .. } => (
+            "transfer",
+            &[ContractKind::Registry],
+            &[ContractKind::Registry],
+        ),
+        Commands::Renew { .. } => (
+            "renew",
+            &[ContractKind::Registrar],
+            &[ContractKind::Registrar],
+        ),
+        Commands::Auction(_) => (
+            "auction",
+            &[ContractKind::Auction],
+            &[ContractKind::Auction],
+        ),
+        Commands::Completions { .. } => ("completions", &[], &[]),
+        Commands::Bridge { .. } => ("bridge", &[ContractKind::Bridge], &[ContractKind::Bridge]),
+        Commands::Subdomain { .. } => (
+            "subdomain",
+            &[ContractKind::Subdomain],
+            &[ContractKind::Subdomain],
+        ),
+        Commands::Nft { .. } => ("nft", &[ContractKind::Nft], &[ContractKind::Nft]),
+        Commands::Whois { .. } => (
+            "whois",
+            &[ContractKind::Registry, ContractKind::Resolver],
+            &[ContractKind::Registry],
+        ),
+        Commands::Portfolio { .. } => (
+            "portfolio",
+            &[ContractKind::Registry, ContractKind::Resolver],
+            &[ContractKind::Registry],
+        ),
+    };
+
+    for kind in overrides.provided_kinds() {
+        if !allowed.contains(&kind) {
+            return Err(format!(
+                "`--{}` cannot be used with `{command_name}`",
+                kind.flag_name()
+            ));
+        }
+    }
+
+    for kind in required {
+        if config.contract_id(*kind).is_none() {
+            return Err(format!(
+                "`{command_name}` requires {}. Set `--{}`, `{}`, or the config file value.",
+                kind.display_name(),
+                kind.flag_name(),
+                kind.env_var()
+            ));
+        }
+    }
+
+    Ok(())
 }

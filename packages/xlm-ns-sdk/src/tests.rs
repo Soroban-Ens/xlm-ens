@@ -10,7 +10,10 @@ mod tests {
             "http://localhost",
             Some("Test SDF Network ; September 2015".into()),
             Some("CDAD...REGISTRY".into()),
+            Some("CDAD...SUBDOMAIN".into()),
+            Some("CDAD...BRIDGE".into()),
         )
+        .with_registrar("CDAD...REGISTRAR")
         .with_resolver("CDAD...RESOLVER")
     }
 

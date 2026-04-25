@@ -14,10 +14,10 @@ pub async fn run_create(
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id),
-        Some(config.subdomain_contract_id),
-        Some(config.bridge_contract_id),
-        Some(config.auction_contract_id),
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     );
 
     println!("Creating auction for {name}...");
@@ -52,10 +52,10 @@ pub async fn run_bid(
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id),
-        Some(config.subdomain_contract_id),
-        Some(config.bridge_contract_id),
-        Some(config.auction_contract_id),
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     );
 
     println!("Placing bid of {amount} XLM on {name}...");
@@ -82,10 +82,10 @@ pub async fn run_inspect(config: NetworkConfig, name: &str) -> anyhow::Result<()
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id),
-        Some(config.subdomain_contract_id),
-        Some(config.bridge_contract_id),
-        Some(config.auction_contract_id),
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     );
 
     let auction = client
@@ -115,10 +115,10 @@ pub async fn run_settle(
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id),
-        Some(config.subdomain_contract_id),
-        Some(config.bridge_contract_id),
-        Some(config.auction_contract_id),
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     );
 
     println!("Settling auction for {name}...");
