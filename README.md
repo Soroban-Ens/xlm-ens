@@ -188,6 +188,14 @@ Shared validation currently enforces:
 - Wasm target: `rustup target add wasm32-unknown-unknown`
 - Soroban CLI (`cargo install --locked soroban-cli`)
 
+### Bootstrap (recommended)
+
+To validate (and optionally install) the toolchain in a rerunnable way:
+
+```sh
+./scripts/bootstrap.sh --install
+```
+
 ### Local setup
 
 Clone the repository and format the workspace:
@@ -206,6 +214,11 @@ TMPDIR=/tmp cargo test --workspace
 
 `TMPDIR=/tmp` is used here because the current sandbox environment does not allow
 Rust to create temporary build directories in the default macOS temp location.
+
+## Operator docs
+
+- Testnet operator runbook: `docs/testnet-operator-runbook.md`
+- Bridge payload + resolver schema docs: `docs/schemas.md`
 
 ## Roadmap
 
