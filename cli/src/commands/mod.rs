@@ -1,8 +1,11 @@
 pub mod auction;
+pub mod bridge;
 pub mod completions;
+pub mod nft;
 pub mod register;
 pub mod renew;
 pub mod resolve;
 pub mod reverse;
+pub mod subdomain;
 pub mod text;
 pub mod transfer;
