@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod signer;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 use config::Network;
@@ -25,11 +26,6 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Register a new name.
-    ///
-    /// Signing material is never taken from the command line. Pass `--signer
-    /// <profile>` to select a profile; the public address is read from
-    /// `XLM_NS_SIGNER_<PROFILE>_PUBLIC` and the secret from
-    /// `XLM_NS_SIGNER_<PROFILE>_SECRET`.
     Register {
         /// Name to register
         name: String,
@@ -45,24 +41,14 @@ enum Commands {
         name: String,
     },
     /// Reverse-resolve an address to its primary name.
-    ///
-    /// Requires the resolver contract (RESOLVER_CONTRACT_ID env var, or the
-    /// network default) to expose a reverse mapping entry for the address.
     ReverseLookup {
         /// Address to reverse-lookup
         address: String,
     },
     /// Read or mutate resolver text records.
-    ///
-    /// Read and write operations target the resolver contract
-    /// (RESOLVER_CONTRACT_ID env var); write operations additionally require
-    /// a signer profile (see `register --help`).
     #[command(subcommand)]
     Text(TextCommand),
     /// Transfer ownership of a name.
-    ///
-    /// `--signer <profile>` selects the account that will authorize the
-    /// transfer. See `register --help` for how signer profiles are loaded.
     Transfer {
         /// Name to transfer
         name: String,
@@ -73,9 +59,6 @@ enum Commands {
         signer: Option<String>,
     },
     /// Renew a name registration.
-    ///
-    /// `--signer <profile>` selects the account that will authorize the
-    /// renewal. See `register --help` for how signer profiles are loaded.
     Renew {
         /// Name to renew
         name: String,
@@ -86,20 +69,10 @@ enum Commands {
         #[arg(long)]
         signer: Option<String>,
     },
-    /// Start or participate in an auction
-    Auction {
-        /// Name for auction
-        name: String,
-        /// Reserve price
-        #[arg(default_value_t = 0)]
-        reserve: u64,
-    },
+    /// Manage auctions for names
+    #[command(subcommand)]
+    Auction(AuctionCommands),
     /// Generate a shell completion script.
-    ///
-    /// Installation examples:
-    ///   bash:  xlm-ns completions bash > /etc/bash_completion.d/xlm-ns
-    ///   zsh:   xlm-ns completions zsh > "${fpath[1]}/_xlm-ns"
-    ///   fish:  xlm-ns completions fish > ~/.config/fish/completions/xlm-ns.fish
     Completions {
         /// Target shell
         #[arg(value_enum)]
@@ -109,6 +82,107 @@ enum Commands {
     Bridge {
         #[command(subcommand)]
         command: BridgeCommands,
+    },
+    /// Subdomain management commands
+    Subdomain {
+        #[command(subcommand)]
+        command: SubdomainCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuctionCommands {
+    /// Create a new auction for a name
+    Create {
+        /// Name to auction
+        name: String,
+        /// Reserve price in XLM
+        #[arg(long, default_value_t = 0)]
+        reserve: u64,
+        /// Auction duration in seconds
+        #[arg(long, default_value_t = 86400)]
+        duration: u64,
+        /// Signer profile
+        #[arg(long)]
+        signer: Option<String>,
+    },
+    /// Place a bid on an active auction
+    Bid {
+        /// Name under auction
+        name: String,
+        /// Bid amount in XLM
+        amount: u64,
+        /// Signer profile
+        #[arg(long)]
+        signer: Option<String>,
+    },
+    /// Inspect the state of an auction
+    Inspect {
+        /// Name to inspect
+        name: String,
+    },
+    /// Settle a completed auction
+    Settle {
+        /// Name to settle
+        name: String,
+        /// Signer profile
+        #[arg(long)]
+        signer: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum BridgeCommands {
+    /// Register a bridge route for a remote chain
+    Register {
+        /// Remote chain name
+        chain: String,
+    },
+    /// Inspect a bridge route
+    Inspect {
+        /// Chain name
+        chain: String,
+    },
+    /// Generate a resolution payload for bridging
+    Payload {
+        /// Name to bridge
+        name: String,
+        /// Target chain
+        chain: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SubdomainCommands {
+    /// Register a parent domain for subdomains
+    RegisterParent {
+        /// Parent name (e.g. "com")
+        name: String,
+        /// Owner address
+        owner: String,
+    },
+    /// Add a controller to a parent domain
+    AddController {
+        /// Parent name
+        parent: String,
+        /// Controller address
+        controller: String,
+    },
+    /// Create a subdomain
+    Create {
+        /// Subdomain label
+        label: String,
+        /// Parent name
+        parent: String,
+        /// Owner address
+        owner: String,
+    },
+    /// Transfer subdomain ownership
+    Transfer {
+        /// Full subdomain FQDN
+        fqdn: String,
+        /// New owner address
+        new_owner: String,
     },
 }
 
@@ -122,9 +196,6 @@ enum TextCommand {
         key: String,
     },
     /// Write a text record value on a name.
-    ///
-    /// Omitting `<value>` clears the record. Requires a signer profile
-    /// (see `register --help`).
     Set {
         /// Name to update
         name: String,
@@ -138,70 +209,98 @@ enum TextCommand {
     },
 }
 
-fn resolve_signer(name: Option<String>) -> Option<SignerProfile> {
-    let name = name?;
-    match load_profile(&name) {
-        Ok(profile) => Some(profile),
-        Err(err) => {
-            eprintln!("Error: {err}");
-            process::exit(1);
-        }
-    }
+fn resolve_signer(name: Option<String>) -> anyhow::Result<Option<SignerProfile>> {
+    let name = match name {
+        Some(n) => n,
+        None => return Ok(None),
+    };
+    load_profile(&name).map(Some).context("failed to load signer profile")
 }
 
-fn main() {
+async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     if let Commands::Completions { shell } = cli.command {
         commands::completions::run_completions::<Cli>(shell, BIN_NAME);
-        return;
+        return Ok(());
     }
 
-    let network = match Network::parse(&cli.network) {
-        Some(n) => n,
-        None => {
-            eprintln!(
-                "Error: Invalid network '{}'. Use 'testnet' or 'mainnet'.",
-                cli.network
-            );
-            process::exit(1);
-        }
-    };
+    let network = Network::parse(&cli.network)
+        .with_context(|| format!("invalid network '{}'", cli.network))?;
 
     let config = network.config();
 
     match cli.command {
         Commands::Register { name, owner, signer } => {
-            commands::register::run_register(config, &name, &owner, resolve_signer(signer));
+            commands::register::run_register(config, &name, &owner, resolve_signer(signer)?).await
         }
         Commands::Resolve { name } => {
-            commands::resolve::run_resolve(config, &name);
+            commands::resolve::run_resolve(config, &name).await
         }
         Commands::ReverseLookup { address } => {
-            commands::reverse::run_reverse(config, &address);
+            commands::reverse::run_reverse(config, &address).await
         }
         Commands::Text(sub) => match sub {
             TextCommand::Get { name, key } => {
-                commands::text::run_get(config, &name, &key);
+                commands::text::run_get(config, &name, &key).await
             }
             TextCommand::Set { name, key, value, signer } => {
-                commands::text::run_set(config, &name, &key, value, resolve_signer(signer));
+                commands::text::run_set(config, &name, &key, value, resolve_signer(signer)?).await
             }
         },
         Commands::Transfer { name, new_owner, signer } => {
-            commands::transfer::run_transfer(
-                config,
-                &name,
-                &new_owner,
-                resolve_signer(signer),
-            );
+            commands::transfer::run_transfer(config, &name, &new_owner, resolve_signer(signer)?).await
         }
         Commands::Renew { name, years, signer } => {
-            commands::renew::run_renew(config, &name, years, resolve_signer(signer));
+            commands::renew::run_renew(config, &name, years, resolve_signer(signer)?).await
         }
-        Commands::Auction { name, reserve } => {
-            commands::auction::run_auction(config, &name, reserve);
-        }
+        Commands::Auction(sub) => match sub {
+            AuctionCommands::Create { name, reserve, duration, signer } => {
+                commands::auction::run_create(config, &name, reserve, duration, resolve_signer(signer)?).await
+            }
+            AuctionCommands::Bid { name, amount, signer } => {
+                commands::auction::run_bid(config, &name, amount, resolve_signer(signer)?).await
+            }
+            AuctionCommands::Inspect { name } => {
+                commands::auction::run_inspect(config, &name).await
+            }
+            AuctionCommands::Settle { name, signer } => {
+                commands::auction::run_settle(config, &name, resolve_signer(signer)?).await
+            }
+        },
+        Commands::Bridge { command } => match command {
+            BridgeCommands::Register { chain } => {
+                commands::bridge::run_register_chain(config, &chain).await
+            }
+            BridgeCommands::Inspect { chain } => {
+                commands::bridge::run_inspect_route(config, &chain).await
+            }
+            BridgeCommands::Payload { name, chain } => {
+                commands::bridge::run_generate_payload(config, &name, &chain).await
+            }
+        },
+        Commands::Subdomain { command } => match command {
+            SubdomainCommands::RegisterParent { name, owner } => {
+                commands::subdomain::run_register_parent(config, &name, &owner).await
+            }
+            SubdomainCommands::AddController { parent, controller } => {
+                commands::subdomain::run_add_controller(config, &parent, &controller).await
+            }
+            SubdomainCommands::Create { label, parent, owner } => {
+                commands::subdomain::run_create_subdomain(config, &label, &parent, &owner).await
+            }
+            SubdomainCommands::Transfer { fqdn, new_owner } => {
+                commands::subdomain::run_transfer_subdomain(config, &fqdn, &new_owner).await
+            }
+        },
         Commands::Completions { .. } => unreachable!("handled above"),
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("Error: {:?}", e);
+        process::exit(1);
     }
 }

@@ -221,3 +221,47 @@ pub struct ResolutionRecord {
     pub text_records: std::collections::HashMap<String, String>,
     pub updated_at: u64,
 }
+
+// Auction types
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AuctionInfo {
+    pub name: String,
+    pub owner: String,
+    pub reserve_price: u64,
+    pub highest_bid: u64,
+    pub highest_bidder: Option<String>,
+    pub ends_at: u64,
+    pub status: AuctionStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+pub enum AuctionStatus {
+    Active,
+    Ended,
+    Settled,
+}
+
+impl fmt::Display for AuctionStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Active => f.write_str("active"),
+            Self::Ended => f.write_str("ended"),
+            Self::Settled => f.write_str("settled"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AuctionCreateRequest {
+    pub name: String,
+    pub reserve_price: u64,
+    pub duration_seconds: u64,
+    pub signer: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BidRequest {
+    pub name: String,
+    pub amount: u64,
+    pub signer: Option<String>,
+}

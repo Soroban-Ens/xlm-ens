@@ -1,30 +1,29 @@
+use anyhow::Context;
 use crate::config::NetworkConfig;
 use crate::signer::SignerProfile;
 use xlm_ns_sdk::client::XlmNsClient;
 use xlm_ns_sdk::types::RegistrationRequest;
 
-pub fn run_register(
+pub async fn run_register(
     config: NetworkConfig,
     label: &str,
     owner: &str,
     signer: Option<SignerProfile>,
-) {
+) -> anyhow::Result<()> {
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
         Some(config.registry_contract_id),
         Some(config.subdomain_contract_id),
         Some(config.bridge_contract_id),
+        Some(config.auction_contract_id),
     );
 
     let duration_years = 1;
-    let quote = match client.quote_registration(label, duration_years) {
-        Ok(quote) => quote,
-        Err(e) => {
-            eprintln!("ERROR: Failed to fetch registration quote: {e:?}");
-            return;
-        }
-    };
+    let quote = client
+        .quote_registration(label, duration_years)
+        .await
+        .context("Failed to fetch registration quote")?;
 
     println!("Registration quote for {label}.xlm:");
     println!(
@@ -46,21 +45,21 @@ pub fn run_register(
         println!("  Signer: {}", s.describe());
     }
 
-    match client.register(RegistrationRequest {
-        label: label.into(),
-        owner: owner.into(),
-        duration_years,
-        signer: signer_handle,
-    }) {
-        Ok(receipt) => {
-            println!("\nSUCCESS: registered {} to {}", receipt.name, receipt.owner);
-            println!("  Fee paid: {} {}", receipt.fee_paid, quote.fee_currency);
-            println!("  Expires at: {}", receipt.expires_at);
-            println!("  Status: {}", receipt.submission.status);
-            println!("  Transaction Hash: {}", receipt.submission.tx_hash);
-        }
-        Err(e) => {
-            eprintln!("\nERROR: Failed to submit registration: {e:?}");
-        }
-    }
+    let receipt = client
+        .register(RegistrationRequest {
+            label: label.into(),
+            owner: owner.into(),
+            duration_years,
+            signer: signer_handle,
+        })
+        .await
+        .context("Failed to submit registration")?;
+
+    println!("\nSUCCESS: registered {} to {}", receipt.name, receipt.owner);
+    println!("  Fee paid: {} {}", receipt.fee_paid, quote.fee_currency);
+    println!("  Expires at: {}", receipt.expires_at);
+    println!("  Status: {}", receipt.submission.status);
+    println!("  Transaction Hash: {}", receipt.submission.tx_hash);
+
+    Ok(())
 }

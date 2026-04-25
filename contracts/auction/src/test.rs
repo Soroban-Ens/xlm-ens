@@ -97,4 +97,3 @@ mod tests {
         assert!(settlement.sold);
     }
 }
-///

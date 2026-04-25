@@ -19,4 +19,4 @@ edition = "2021"
 license = "MIT"
 version = "0.1.0"
 authors = ["ik"]
-repository = "https://example.com/xlm-ns"
+repository = "https://github.com/Soroban-Ens/xlm-ens"

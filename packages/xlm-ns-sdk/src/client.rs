@@ -3,10 +3,12 @@ use crate::types::{
     FeeBreakdown, RegistrationQuote, RegistrationReceipt, RegistrationRequest, RenewalReceipt,
     RenewalRequest, ResolutionResult, ReverseResolution, SubmissionStatus, TextRecord,
     TextRecordUpdate, TransactionSubmission, TransferRequest, DEFAULT_FEE_CURRENCY,
+    RegistryEntry, ResolutionRecord, AuctionInfo, AuctionStatus, AuctionCreateRequest, BidRequest,
+    RegisterParentRequest, AddControllerRequest, CreateSubdomainRequest, TransferSubdomainRequest,
+    RegisterChainRequest, BridgeRoute, BuildMessageRequest,
 };
-use soroban_rpc::Client;
-use soroban_sdk::{xdr::{ScVal, ScVec, ScMap, ScMapEntry, ScString, Hash}, Address, Env, String as SorobanString};
-use std::{collections::HashMap, str::FromStr};
+use stellar_rpc_client::Client;
+
 
 const MOCK_REFERENCE_TIMESTAMP: u64 = 1_682_200_000;
 const SECONDS_PER_YEAR: u64 = 31_536_000;
@@ -20,6 +22,9 @@ pub struct XlmNsClient {
     pub network_passphrase: Option<String>,
     pub registry_contract_id: Option<String>,
     pub resolver_contract_id: Option<String>,
+    pub subdomain_contract_id: Option<String>,
+    pub bridge_contract_id: Option<String>,
+    pub auction_contract_id: Option<String>,
 }
 
 impl XlmNsClient {
@@ -29,12 +34,16 @@ impl XlmNsClient {
         registry_contract_id: Option<String>,
         subdomain_contract_id: Option<String>,
         bridge_contract_id: Option<String>,
+        auction_contract_id: Option<String>,
     ) -> Self {
         Self {
             rpc_url: rpc_url.into(),
             network_passphrase: passphrase,
-            registry_contract_id: contract_id,
+            registry_contract_id,
             resolver_contract_id: None,
+            subdomain_contract_id,
+            bridge_contract_id,
+            auction_contract_id,
         }
     }
 
@@ -43,79 +52,82 @@ impl XlmNsClient {
         self
     }
 
-    pub fn resolve(&self, name: &str) -> Result<ResolutionResult, SdkError> {
-        Ok(ResolutionResult {
+    pub async fn resolve(&self, name: &str) -> Result<ResolutionResult, SdkError> {
+        let rpc = Client::new(&self.rpc_url).map_err(|e| SdkError::InvalidRequest(e.to_string()))?;
+        let registry_id = self.registry_contract_id.as_ref()
+            .ok_or(SdkError::InvalidRequest("registry contract ID not configured".into()))?;
+
+        let entry = self.query_registry(&rpc, registry_id, name).await?;
+        
+        let mut result = ResolutionResult {
             name: name.to_string(),
-            address: Some("GDRA...MOCK_ADDR".to_string()),
-            resolver: self.resolver_contract_id.clone(),
-            expires_at: Some(MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR),
+            address: entry.target_address,
+            resolver: entry.resolver.clone(),
+            expires_at: Some(entry.expires_at),
+        };
+
+        if let Some(resolver_id) = entry.resolver {
+            if let Ok(Some(record)) = self.query_resolver(&rpc, &resolver_id, name).await {
+                result.address = Some(record.address);
+            }
+        }
+
+        Ok(result)
+    }
+
+    async fn query_registry(&self, client: &Client, _contract_id: &str, name: &str) -> Result<RegistryEntry, SdkError> {
+        // In a real implementation, this would use client.get_ledger_entries or call a contract method
+        // For this task, we'll keep the transport test but return the mock entry
+        let _network = client.get_network().await
+            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
+
+        Ok(RegistryEntry {
+            name: name.to_string(),
+            owner: "GDRA...OWNER".to_string(),
+            resolver: self.resolver_contract_id.clone().or(Some("CDAD...RESOLVER".to_string())),
+            target_address: Some("GDRA...TARGET".to_string()),
+            metadata_uri: None,
+            ttl_seconds: 3600,
+            registered_at: MOCK_REFERENCE_TIMESTAMP - 86400,
+            expires_at: MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR,
+            grace_period_ends_at: MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR + 86400,
+            transfer_count: 0,
         })
     }
 
-    async fn query_registry(&self, client: &Client, contract_id: &str, name: &str) -> Result<RegistryEntry, SdkError> {
-        // For now, make a real RPC call to get network info to test transport
+    async fn query_resolver(&self, client: &Client, _contract_id: &str, _name: &str) -> Result<Option<ResolutionRecord>, SdkError> {
         let _network = client.get_network().await
             .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
 
-        // Mock the registry entry for now
-        let entry = RegistryEntry {
-            name: name.to_string(),
-            owner: "mock_owner".to_string(),
-            resolver: Some("mock_resolver_id".to_string()),
-            target_address: None,
-            metadata_uri: None,
-            ttl_seconds: 3600,
-            registered_at: 0,
-            expires_at: 2000000000,
-            grace_period_ends_at: 2000003600,
-            transfer_count: 0,
-        };
-
-        Ok(entry)
-    }
-
-    async fn query_resolver(&self, client: &Client, contract_id: &str, name: &str) -> Result<Option<ResolutionRecord>, SdkError> {
-        // Make another RPC call to test transport
-        let _network = client.get_network().await
-            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
-
-        // Mock the record
-        let record = ResolutionRecord {
-            owner: "mock_owner".to_string(),
-            address: "GDRA...REAL_ADDR".to_string(),
+        Ok(Some(ResolutionRecord {
+            owner: "GDRA...OWNER".to_string(),
+            address: "GDRA...RESOLVED_ADDR".to_string(),
             text_records: std::collections::HashMap::new(),
-            updated_at: 0,
-        };
-
-        Ok(Some(record))
+            updated_at: MOCK_REFERENCE_TIMESTAMP,
+        }))
     }
 
-    pub fn get_registration(&self, name: &str) -> Result<Option<ResolutionResult>, SdkError> {
+    pub async fn get_registration(&self, name: &str) -> Result<Option<ResolutionResult>, SdkError> {
         if name == "notfound.xlm" {
             Ok(None)
         } else {
-            Ok(Some(ResolutionResult {
-                name: name.to_string(),
-                address: Some("GDRA...OWNER_ADDR".to_string()),
-                resolver: self.resolver_contract_id.clone(),
-                expires_at: Some(MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR),
-            }))
+            Ok(Some(self.resolve(name).await?))
         }
     }
 
-    pub fn reverse_resolve(&self, address: &str) -> Result<ReverseResolution, SdkError> {
+    pub async fn reverse_resolve(&self, address: &str) -> Result<ReverseResolution, SdkError> {
         if address.trim().is_empty() {
             return Err(SdkError::InvalidRequest("address must not be empty".into()));
         }
 
         Ok(ReverseResolution {
             address: address.to_string(),
-            primary_name: Some("reverse.xlm".to_string()),
+            primary_name: Some("primary.xlm".to_string()),
             resolver: self.resolver_contract_id.clone(),
         })
     }
 
-    pub fn get_text_record(&self, name: &str, key: &str) -> Result<TextRecord, SdkError> {
+    pub async fn get_text_record(&self, name: &str, key: &str) -> Result<TextRecord, SdkError> {
         if name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
@@ -130,7 +142,7 @@ impl XlmNsClient {
         })
     }
 
-    pub fn set_text_record(&self, update: TextRecordUpdate) -> Result<TransactionSubmission, SdkError> {
+    pub async fn set_text_record(&self, update: TextRecordUpdate) -> Result<TransactionSubmission, SdkError> {
         if update.name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
@@ -149,7 +161,7 @@ impl XlmNsClient {
         })
     }
 
-    pub fn quote_registration(
+    pub async fn quote_registration(
         &self,
         label: &str,
         duration_years: u32,
@@ -184,7 +196,7 @@ impl XlmNsClient {
         })
     }
 
-    pub fn register(&self, request: RegistrationRequest) -> Result<RegistrationReceipt, SdkError> {
+    pub async fn register(&self, request: RegistrationRequest) -> Result<RegistrationReceipt, SdkError> {
         if request.label.trim().is_empty() {
             return Err(SdkError::InvalidRequest("label must not be empty".into()));
         }
@@ -197,7 +209,7 @@ impl XlmNsClient {
             ));
         }
 
-        let quote = self.quote_registration(&request.label, request.duration_years)?;
+        let quote = self.quote_registration(&request.label, request.duration_years).await?;
         let submission = TransactionSubmission {
             tx_hash: "tx_abc123789xyz".to_string(),
             status: SubmissionStatus::Submitted,
@@ -218,7 +230,7 @@ impl XlmNsClient {
         })
     }
 
-    pub fn renew(&self, request: RenewalRequest) -> Result<RenewalReceipt, SdkError> {
+    pub async fn renew(&self, request: RenewalRequest) -> Result<RenewalReceipt, SdkError> {
         if request.name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
@@ -252,7 +264,7 @@ impl XlmNsClient {
         })
     }
 
-    pub fn transfer(&self, request: TransferRequest) -> Result<TransactionSubmission, SdkError> {
+    pub async fn transfer(&self, request: TransferRequest) -> Result<TransactionSubmission, SdkError> {
         if request.name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
@@ -274,7 +286,7 @@ impl XlmNsClient {
     }
 
     // Subdomain methods
-    pub fn register_parent(&self, request: RegisterParentRequest) -> Result<(), SdkError> {
+    pub async fn register_parent(&self, request: RegisterParentRequest) -> Result<(), SdkError> {
         if request.parent.trim().is_empty() {
             return Err(SdkError::InvalidRequest("parent must not be empty".into()));
         }
@@ -285,7 +297,7 @@ impl XlmNsClient {
         Ok(())
     }
 
-    pub fn add_controller(&self, request: AddControllerRequest) -> Result<(), SdkError> {
+    pub async fn add_controller(&self, request: AddControllerRequest) -> Result<(), SdkError> {
         if request.parent.trim().is_empty() {
             return Err(SdkError::InvalidRequest("parent must not be empty".into()));
         }
@@ -296,7 +308,7 @@ impl XlmNsClient {
         Ok(())
     }
 
-    pub fn create_subdomain(&self, request: CreateSubdomainRequest) -> Result<String, SdkError> {
+    pub async fn create_subdomain(&self, request: CreateSubdomainRequest) -> Result<String, SdkError> {
         if request.label.trim().is_empty() {
             return Err(SdkError::InvalidRequest("label must not be empty".into()));
         }
@@ -310,7 +322,7 @@ impl XlmNsClient {
         Ok(format!("{}.{}", request.label, request.parent))
     }
 
-    pub fn transfer_subdomain(&self, request: TransferSubdomainRequest) -> Result<(), SdkError> {
+    pub async fn transfer_subdomain(&self, request: TransferSubdomainRequest) -> Result<(), SdkError> {
         if request.fqdn.trim().is_empty() {
             return Err(SdkError::InvalidRequest("fqdn must not be empty".into()));
         }
@@ -322,7 +334,7 @@ impl XlmNsClient {
     }
 
     // Bridge methods
-    pub fn register_chain(&self, request: RegisterChainRequest) -> Result<(), SdkError> {
+    pub async fn register_chain(&self, request: RegisterChainRequest) -> Result<(), SdkError> {
         if request.chain.trim().is_empty() {
             return Err(SdkError::InvalidRequest("chain must not be empty".into()));
         }
@@ -335,7 +347,7 @@ impl XlmNsClient {
         Ok(())
     }
 
-    pub fn get_route(&self, chain: &str) -> Result<Option<BridgeRoute>, SdkError> {
+    pub async fn get_route(&self, chain: &str) -> Result<Option<BridgeRoute>, SdkError> {
         if chain.trim().is_empty() {
             return Err(SdkError::InvalidRequest("chain must not be empty".into()));
         }
@@ -361,7 +373,7 @@ impl XlmNsClient {
         Ok(route)
     }
 
-    pub fn build_message(&self, request: BuildMessageRequest) -> Result<String, SdkError> {
+    pub async fn build_message(&self, request: BuildMessageRequest) -> Result<String, SdkError> {
         if request.name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
@@ -369,7 +381,7 @@ impl XlmNsClient {
             return Err(SdkError::InvalidRequest("chain must not be empty".into()));
         }
         // Check if chain is supported
-        if self.get_route(&request.chain)?.is_none() {
+        if self.get_route(&request.chain).await?.is_none() {
             return Err(SdkError::InvalidRequest(format!("unsupported chain: {}", request.chain)));
         }
         // Mock implementation - build GMP message
@@ -384,5 +396,88 @@ impl XlmNsClient {
             }
         );
         Ok(message)
+    }
+
+    // Auction methods
+    pub async fn get_auction(&self, name: &str) -> Result<Option<AuctionInfo>, SdkError> {
+        if name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
+        }
+        
+        // Mock implementation
+        if name == "active.xlm" {
+            Ok(Some(AuctionInfo {
+                name: name.to_string(),
+                owner: "GDRA...OWNER".to_string(),
+                reserve_price: 100,
+                highest_bid: 150,
+                highest_bidder: Some("GDRA...BIDDER".to_string()),
+                ends_at: MOCK_REFERENCE_TIMESTAMP + 3600,
+                status: AuctionStatus::Active,
+            }))
+        } else if name == "ended.xlm" {
+            Ok(Some(AuctionInfo {
+                name: name.to_string(),
+                owner: "GDRA...OWNER".to_string(),
+                reserve_price: 100,
+                highest_bid: 200,
+                highest_bidder: Some("GDRA...WINNER".to_string()),
+                ends_at: MOCK_REFERENCE_TIMESTAMP - 3600,
+                status: AuctionStatus::Ended,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn create_auction(&self, request: AuctionCreateRequest) -> Result<TransactionSubmission, SdkError> {
+        if request.name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
+        }
+        
+        Ok(TransactionSubmission {
+            tx_hash: "tx_auction_create_mock".to_string(),
+            status: SubmissionStatus::Submitted,
+            ledger: None,
+            submitted_at: MOCK_REFERENCE_TIMESTAMP,
+            contract_id: self.auction_contract_id.clone(),
+            network_passphrase: self.network_passphrase.clone(),
+            signer: request.signer,
+        })
+    }
+
+    pub async fn bid_auction(&self, request: BidRequest) -> Result<TransactionSubmission, SdkError> {
+        if request.name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
+        }
+        if request.amount == 0 {
+            return Err(SdkError::InvalidRequest("bid amount must be greater than zero".into()));
+        }
+
+        Ok(TransactionSubmission {
+            tx_hash: "tx_bid_mock".to_string(),
+            status: SubmissionStatus::Submitted,
+            ledger: None,
+            submitted_at: MOCK_REFERENCE_TIMESTAMP,
+            contract_id: self.auction_contract_id.clone(),
+            network_passphrase: self.network_passphrase.clone(),
+            signer: request.signer,
+        })
+    }
+
+    pub async fn settle_auction(&self, name: &str, signer: Option<String>) -> Result<TransactionSubmission, SdkError> {
+        if name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
+        }
+
+        Ok(TransactionSubmission {
+            tx_hash: "tx_settle_mock".to_string(),
+            status: SubmissionStatus::Submitted,
+            ledger: None,
+            submitted_at: MOCK_REFERENCE_TIMESTAMP,
+            contract_id: self.auction_contract_id.clone(),
+            network_passphrase: self.network_passphrase.clone(),
+            signer,
+        })
     }
 }

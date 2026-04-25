@@ -5,4 +5,6 @@ pub mod renew;
 pub mod resolve;
 pub mod reverse;
 pub mod text;
+pub mod bridge;
+pub mod subdomain;
 pub mod transfer;
