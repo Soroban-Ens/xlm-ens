@@ -176,6 +176,8 @@ impl RegistrarContract {
         payment_stroops: u64,
         now_unix: u64,
     ) -> Result<(), RegistrarError> {
+        caller.require_auth();
+
         let label = extract_label_soroban(&env, &name).map_err(|_| RegistrarError::Validation)?;
         validate_registration_years_soroban(years).map_err(|_| RegistrarError::Validation)?;
 
