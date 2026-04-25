@@ -21,7 +21,9 @@ pub fn run_register_chain(config: NetworkConfig, output: OutputFormat, chain: &s
         .expect("bridge command validated bridge contract id");
     let client = build_client(&config);
 
-    match client.register_chain(RegisterChainRequest { chain: chain.into() }) {
+    match client.register_chain(RegisterChainRequest {
+        chain: chain.into(),
+    }) {
         Ok(()) => emit(
             output,
             &format!(
@@ -96,12 +98,7 @@ pub fn run_inspect_route(config: NetworkConfig, output: OutputFormat, chain: &st
     }
 }
 
-pub fn run_generate_payload(
-    config: NetworkConfig,
-    output: OutputFormat,
-    name: &str,
-    chain: &str,
-) {
+pub fn run_generate_payload(config: NetworkConfig, output: OutputFormat, name: &str, chain: &str) {
     let bridge_contract_id = config
         .bridge_contract_id
         .clone()

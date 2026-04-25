@@ -118,6 +118,20 @@ stubs:
 - `scripts/`
   Shell helpers for deploy, invoke, and local setup tasks.
 
+#### CLI output modes
+
+All CLI commands accept `--output human` (default) or `--output json` for automation-friendly output.
+
+Examples:
+
+- `cargo run -p xlm-ns-cli -- resolve timmy.xlm --output json`
+- `cargo run -p xlm-ns-cli -- whois timmy.xlm --output json`
+- `cargo run -p xlm-ns-cli -- portfolio GDRA...OWNER_ADDR --output json`
+
+#### Contract spec artifacts (CI)
+
+CI uploads a `soroban-contract-artifacts` artifact containing built contract WASM files and extracted contract specs (JSON).
+
 - `tests/`
   Placeholders for integration scenarios and test fixtures shared across crates.
 

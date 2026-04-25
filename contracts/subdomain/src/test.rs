@@ -43,10 +43,10 @@ mod tests {
         let parent = String::from_str(&env, "timmy.xlm");
 
         client.register_parent(&parent, &owner);
-        
+
         // Add controller
         client.add_controller(&parent, &owner, &controller);
-        
+
         // Remove controller
         client.remove_controller(&parent, &owner, &controller);
 
@@ -79,9 +79,12 @@ mod tests {
         }));
 
         assert!(result.is_err(), "intruder parent registration should fail");
-        
+
         let parent_record = client.parent(&parent).unwrap();
-        assert_eq!(parent_record.owner, owner, "original owner should be preserved");
+        assert_eq!(
+            parent_record.owner, owner,
+            "original owner should be preserved"
+        );
     }
 
     #[test]

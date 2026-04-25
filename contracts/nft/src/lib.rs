@@ -149,7 +149,9 @@ fn owner_tokens(env: &Env, owner: &Address) -> Vec<String> {
 fn append_token_id(env: &Env, token_id: &String) {
     let mut token_ids = token_ids(env);
     token_ids.push_back(token_id.clone());
-    env.storage().persistent().set(&DataKey::TokenIds, &token_ids);
+    env.storage()
+        .persistent()
+        .set(&DataKey::TokenIds, &token_ids);
 }
 
 fn add_owner_token(env: &Env, owner: &Address, token_id: &String) {

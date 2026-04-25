@@ -137,15 +137,22 @@ enum Commands {
         #[command(subcommand)]
         command: NftCommands,
     },
+    /// Show registration details for a single name.
+    Whois {
+        /// Name to inspect
+        name: String,
+    },
+    /// List names owned by an address.
+    Portfolio {
+        /// Owner address to inspect
+        owner: String,
+    },
 }
 
 #[derive(Subcommand)]
 enum TextCommand {
     /// Read a text record value for a name.
-    Get {
-        name: String,
-        key: String,
-    },
+    Get { name: String, key: String },
     /// Write a text record value on a name.
     Set {
         name: String,
@@ -173,7 +180,11 @@ enum SubdomainCommands {
     /// Add a controller for a delegated parent domain.
     AddController { parent: String, controller: String },
     /// Create a subdomain beneath an already-registered parent.
-    Create { label: String, parent: String, owner: String },
+    Create {
+        label: String,
+        parent: String,
+        owner: String,
+    },
     /// Transfer an existing subdomain.
     Transfer { fqdn: String, new_owner: String },
 }
@@ -246,7 +257,11 @@ fn main() {
     }
 
     match cli.command {
-        Commands::Register { name, owner, signer } => {
+        Commands::Register {
+            name,
+            owner,
+            signer,
+        } => {
             commands::register::run_register(
                 config,
                 cli.output,
@@ -294,14 +309,12 @@ fn main() {
                 resolve_signer(signer),
             );
         }
-        Commands::Renew { name, years, signer } => {
-            commands::renew::run_renew(
-                config,
-                cli.output,
-                &name,
-                years,
-                resolve_signer(signer),
-            );
+        Commands::Renew {
+            name,
+            years,
+            signer,
+        } => {
+            commands::renew::run_renew(config, cli.output, &name, years, resolve_signer(signer));
         }
         Commands::Auction { name, reserve } => {
             commands::auction::run_auction(config, cli.output, &name, reserve);
@@ -322,12 +335,7 @@ fn main() {
                 commands::subdomain::run_register_parent(config, cli.output, &parent, &owner);
             }
             SubdomainCommands::AddController { parent, controller } => {
-                commands::subdomain::run_add_controller(
-                    config,
-                    cli.output,
-                    &parent,
-                    &controller,
-                );
+                commands::subdomain::run_add_controller(config, cli.output, &parent, &controller);
             }
             SubdomainCommands::Create {
                 label,
@@ -335,20 +343,11 @@ fn main() {
                 owner,
             } => {
                 commands::subdomain::run_create_subdomain(
-                    config,
-                    cli.output,
-                    &label,
-                    &parent,
-                    &owner,
+                    config, cli.output, &label, &parent, &owner,
                 );
             }
             SubdomainCommands::Transfer { fqdn, new_owner } => {
-                commands::subdomain::run_transfer_subdomain(
-                    config,
-                    cli.output,
-                    &fqdn,
-                    &new_owner,
-                );
+                commands::subdomain::run_transfer_subdomain(config, cli.output, &fqdn, &new_owner);
             }
         },
         Commands::Nft { command } => match command {
@@ -356,6 +355,12 @@ fn main() {
                 commands::nft::run_inspect(config, cli.output, &token_id);
             }
         },
+        Commands::Whois { name } => {
+            commands::whois::run_whois(config, cli.output, &name);
+        }
+        Commands::Portfolio { owner } => {
+            commands::portfolio::run_portfolio(config, cli.output, &owner);
+        }
         Commands::Completions { .. } => unreachable!("handled above"),
     }
 }
@@ -367,17 +372,37 @@ fn validate_contract_policy(
 ) -> Result<(), String> {
     let (command_name, allowed, required): (&str, &[ContractKind], &[ContractKind]) = match command
     {
-        Commands::Register { .. } => ("register", &[ContractKind::Registrar], &[ContractKind::Registrar]),
-        Commands::Resolve { .. } => ("resolve", &[ContractKind::Resolver], &[ContractKind::Resolver]),
+        Commands::Register { .. } => (
+            "register",
+            &[ContractKind::Registrar],
+            &[ContractKind::Registrar],
+        ),
+        Commands::Resolve { .. } => (
+            "resolve",
+            &[ContractKind::Resolver],
+            &[ContractKind::Resolver],
+        ),
         Commands::ReverseLookup { .. } => (
             "reverse-lookup",
             &[ContractKind::Resolver],
             &[ContractKind::Resolver],
         ),
         Commands::Text(_) => ("text", &[ContractKind::Resolver], &[ContractKind::Resolver]),
-        Commands::Transfer { .. } => ("transfer", &[ContractKind::Registry], &[ContractKind::Registry]),
-        Commands::Renew { .. } => ("renew", &[ContractKind::Registrar], &[ContractKind::Registrar]),
-        Commands::Auction { .. } => ("auction", &[ContractKind::Auction], &[ContractKind::Auction]),
+        Commands::Transfer { .. } => (
+            "transfer",
+            &[ContractKind::Registry],
+            &[ContractKind::Registry],
+        ),
+        Commands::Renew { .. } => (
+            "renew",
+            &[ContractKind::Registrar],
+            &[ContractKind::Registrar],
+        ),
+        Commands::Auction { .. } => (
+            "auction",
+            &[ContractKind::Auction],
+            &[ContractKind::Auction],
+        ),
         Commands::Completions { .. } => ("completions", &[], &[]),
         Commands::Bridge { .. } => ("bridge", &[ContractKind::Bridge], &[ContractKind::Bridge]),
         Commands::Subdomain { .. } => (
@@ -386,6 +411,16 @@ fn validate_contract_policy(
             &[ContractKind::Subdomain],
         ),
         Commands::Nft { .. } => ("nft", &[ContractKind::Nft], &[ContractKind::Nft]),
+        Commands::Whois { .. } => (
+            "whois",
+            &[ContractKind::Registry, ContractKind::Resolver],
+            &[ContractKind::Registry],
+        ),
+        Commands::Portfolio { .. } => (
+            "portfolio",
+            &[ContractKind::Registry, ContractKind::Resolver],
+            &[ContractKind::Registry],
+        ),
     };
 
     for kind in overrides.provided_kinds() {

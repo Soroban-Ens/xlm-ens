@@ -17,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust
         run: rustup update stable && rustup component add rustfmt
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: cargo fmt --all --check
 
@@ -27,7 +29,48 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust
         run: rustup update stable
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
       - name: Install Soroban CLI (optional but useful for integration tests)
         run: cargo install --locked soroban-cli || true
       - name: Run tests
         run: cargo test --workspace
+
+  artifacts:
+    name: Contract Artifacts (WASM + spec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable && rustup target add wasm32-unknown-unknown
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+      - name: Install Soroban CLI
+        run: cargo install --locked soroban-cli
+      - name: Build contracts
+        run: |
+          cargo build --release --target wasm32-unknown-unknown \
+            -p xlm-ns-registry \
+            -p xlm-ns-registrar \
+            -p xlm-ns-resolver \
+            -p xlm-ns-auction \
+            -p xlm-ns-subdomain \
+            -p xlm-ns-nft \
+            -p xlm-ns-bridge
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts/wasm artifacts/specs
+          cp target/wasm32-unknown-unknown/release/xlm_ns_*.wasm artifacts/wasm/
+          for wasm in artifacts/wasm/*.wasm; do
+            base="$(basename "${wasm%.wasm}")"
+            soroban contract spec --wasm "$wasm" --output json > "artifacts/specs/${base}.json"
+          done
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-contract-artifacts
+          path: artifacts

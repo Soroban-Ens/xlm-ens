@@ -20,7 +20,10 @@ mod tests {
         assert_eq!(client.total_supply(), 1);
         assert_eq!(client.balance_of(&owner), 1);
         assert_eq!(client.token_by_index(&0), Some(token_id.clone()));
-        assert_eq!(client.token_of_owner_by_index(&owner, &0), Some(token_id.clone()));
+        assert_eq!(
+            client.token_of_owner_by_index(&owner, &0),
+            Some(token_id.clone())
+        );
         assert_eq!(client.token_uri(&token_id), Some(metadata_uri.clone()));
 
         let token = client.token(&token_id).unwrap();
@@ -173,9 +176,17 @@ mod tests {
         let second_token = String::from_str(&env, "beta.xlm");
         let third_token = String::from_str(&env, "gamma.xlm");
 
-        client.mint(&first_token, &owner, &Some(String::from_str(&env, "ipfs://alpha")));
+        client.mint(
+            &first_token,
+            &owner,
+            &Some(String::from_str(&env, "ipfs://alpha")),
+        );
         client.mint(&second_token, &owner, &None::<String>);
-        client.mint(&third_token, &other_owner, &Some(String::from_str(&env, "ipfs://gamma")));
+        client.mint(
+            &third_token,
+            &other_owner,
+            &Some(String::from_str(&env, "ipfs://gamma")),
+        );
 
         assert_eq!(client.total_supply(), 3);
         assert_eq!(client.balance_of(&owner), 2);
@@ -186,14 +197,23 @@ mod tests {
         assert_eq!(client.token_by_index(&2), Some(third_token.clone()));
         assert_eq!(client.token_by_index(&3), None);
 
-        assert_eq!(client.token_of_owner_by_index(&owner, &0), Some(first_token));
-        assert_eq!(client.token_of_owner_by_index(&owner, &1), Some(second_token));
+        assert_eq!(
+            client.token_of_owner_by_index(&owner, &0),
+            Some(first_token)
+        );
+        assert_eq!(
+            client.token_of_owner_by_index(&owner, &1),
+            Some(second_token)
+        );
         assert_eq!(client.token_of_owner_by_index(&owner, &2), None);
         assert_eq!(
             client.token_of_owner_by_index(&other_owner, &0),
             Some(third_token.clone())
         );
-        assert_eq!(client.token_uri(&third_token), Some(String::from_str(&env, "ipfs://gamma")));
+        assert_eq!(
+            client.token_uri(&third_token),
+            Some(String::from_str(&env, "ipfs://gamma"))
+        );
     }
 
     #[test]
@@ -206,13 +226,20 @@ mod tests {
         let approved = Address::generate(&env);
         let token_id = String::from_str(&env, "timmy.xlm");
 
-        client.mint(&token_id, &owner, &Some(String::from_str(&env, "ipfs://timmy")));
+        client.mint(
+            &token_id,
+            &owner,
+            &Some(String::from_str(&env, "ipfs://timmy")),
+        );
         client.approve(&token_id, &owner, &approved);
 
         assert_eq!(client.total_supply(), 1);
         assert_eq!(client.balance_of(&owner), 1);
         assert_eq!(client.token_by_index(&0), Some(token_id.clone()));
-        assert_eq!(client.token_of_owner_by_index(&owner, &0), Some(token_id.clone()));
+        assert_eq!(
+            client.token_of_owner_by_index(&owner, &0),
+            Some(token_id.clone())
+        );
         assert_eq!(
             client.token_uri(&token_id),
             Some(String::from_str(&env, "ipfs://timmy"))
