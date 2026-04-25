@@ -169,6 +169,13 @@ The registration flow is now integrated on-chain:
 3. Set resolver records for forward and reverse lookups.
 4. Optionally mint an NFT and configure bridge routes or subdomains.
 
+### Failure Semantics and Reverts
+
+Cross-contract orchestration in Soroban is atomic. When the Registrar invokes the Registry to materialize a name:
+- **Synchronous Execution:** The Registrar waits for the Registry to complete its state updates.
+- **Atomic Rollback:** If the Registry fails (e.g., the name is already taken, validation fails, or it panics), the entire transaction reverts. This includes the Registrar's payment collection and local state updates.
+- **No Silent Divergence:** Because partial failures are impossible under Soroban's single-transaction atomic cross-contract calls, the Registrar and Registry cannot fall out of sync. If you pay, you get the name. If the name cannot be issued, you don't pay.
+
 ## Naming and validation rules
 
 Shared validation currently enforces:
