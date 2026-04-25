@@ -1,12 +1,11 @@
 use crate::errors::SdkError;
 use crate::types::{
-    FeeBreakdown, RegistrationQuote, RegistrationReceipt, RegistrationRequest, RenewalReceipt,
-    RenewalRequest, ResolutionResult, ReverseResolution, SubmissionStatus, TextRecord,
-    TextRecordUpdate, TransactionSubmission, TransferRequest, DEFAULT_FEE_CURRENCY,
+    AddControllerRequest, BridgeRoute, BuildMessageRequest, FeeBreakdown, NftRecord,
+    RegisterChainRequest, RegisterParentRequest, RegistrationQuote, RegistrationReceipt,
+    RegistrationRequest, RenewalReceipt, RenewalRequest, ResolutionResult, ReverseResolution,
+    SubmissionStatus, TextRecord, TextRecordUpdate, TransactionSubmission, TransferRequest,
+    TransferSubdomainRequest, DEFAULT_FEE_CURRENCY,
 };
-use soroban_rpc::Client;
-use soroban_sdk::{xdr::{ScVal, ScVec, ScMap, ScMapEntry, ScString, Hash}, Address, Env, String as SorobanString};
-use std::{collections::HashMap, str::FromStr};
 
 const MOCK_REFERENCE_TIMESTAMP: u64 = 1_682_200_000;
 const SECONDS_PER_YEAR: u64 = 31_536_000;
@@ -19,7 +18,12 @@ pub struct XlmNsClient {
     pub rpc_url: String,
     pub network_passphrase: Option<String>,
     pub registry_contract_id: Option<String>,
+    pub registrar_contract_id: Option<String>,
     pub resolver_contract_id: Option<String>,
+    pub auction_contract_id: Option<String>,
+    pub bridge_contract_id: Option<String>,
+    pub subdomain_contract_id: Option<String>,
+    pub nft_contract_id: Option<String>,
 }
 
 impl XlmNsClient {
@@ -33,9 +37,19 @@ impl XlmNsClient {
         Self {
             rpc_url: rpc_url.into(),
             network_passphrase: passphrase,
-            registry_contract_id: contract_id,
+            registry_contract_id,
+            registrar_contract_id: None,
             resolver_contract_id: None,
+            auction_contract_id: None,
+            bridge_contract_id,
+            subdomain_contract_id,
+            nft_contract_id: None,
         }
+    }
+
+    pub fn with_registrar(mut self, registrar_contract_id: impl Into<String>) -> Self {
+        self.registrar_contract_id = Some(registrar_contract_id.into());
+        self
     }
 
     pub fn with_resolver(mut self, resolver_contract_id: impl Into<String>) -> Self {
@@ -43,7 +57,21 @@ impl XlmNsClient {
         self
     }
 
+    pub fn with_auction(mut self, auction_contract_id: impl Into<String>) -> Self {
+        self.auction_contract_id = Some(auction_contract_id.into());
+        self
+    }
+
+    pub fn with_nft(mut self, nft_contract_id: impl Into<String>) -> Self {
+        self.nft_contract_id = Some(nft_contract_id.into());
+        self
+    }
+
     pub fn resolve(&self, name: &str) -> Result<ResolutionResult, SdkError> {
+        if name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
+        }
+
         Ok(ResolutionResult {
             name: name.to_string(),
             address: Some("GDRA...MOCK_ADDR".to_string()),
@@ -52,55 +80,21 @@ impl XlmNsClient {
         })
     }
 
-    async fn query_registry(&self, client: &Client, contract_id: &str, name: &str) -> Result<RegistryEntry, SdkError> {
-        // For now, make a real RPC call to get network info to test transport
-        let _network = client.get_network().await
-            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
-
-        // Mock the registry entry for now
-        let entry = RegistryEntry {
-            name: name.to_string(),
-            owner: "mock_owner".to_string(),
-            resolver: Some("mock_resolver_id".to_string()),
-            target_address: None,
-            metadata_uri: None,
-            ttl_seconds: 3600,
-            registered_at: 0,
-            expires_at: 2000000000,
-            grace_period_ends_at: 2000003600,
-            transfer_count: 0,
-        };
-
-        Ok(entry)
-    }
-
-    async fn query_resolver(&self, client: &Client, contract_id: &str, name: &str) -> Result<Option<ResolutionRecord>, SdkError> {
-        // Make another RPC call to test transport
-        let _network = client.get_network().await
-            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
-
-        // Mock the record
-        let record = ResolutionRecord {
-            owner: "mock_owner".to_string(),
-            address: "GDRA...REAL_ADDR".to_string(),
-            text_records: std::collections::HashMap::new(),
-            updated_at: 0,
-        };
-
-        Ok(Some(record))
-    }
-
     pub fn get_registration(&self, name: &str) -> Result<Option<ResolutionResult>, SdkError> {
-        if name == "notfound.xlm" {
-            Ok(None)
-        } else {
-            Ok(Some(ResolutionResult {
-                name: name.to_string(),
-                address: Some("GDRA...OWNER_ADDR".to_string()),
-                resolver: self.resolver_contract_id.clone(),
-                expires_at: Some(MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR),
-            }))
+        if name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
+
+        if name == "notfound.xlm" {
+            return Ok(None);
+        }
+
+        Ok(Some(ResolutionResult {
+            name: name.to_string(),
+            address: Some("GDRA...OWNER_ADDR".to_string()),
+            resolver: self.resolver_contract_id.clone(),
+            expires_at: Some(MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR),
+        }))
     }
 
     pub fn reverse_resolve(&self, address: &str) -> Result<ReverseResolution, SdkError> {
@@ -163,7 +157,7 @@ impl XlmNsClient {
             ));
         }
 
-        let years = duration_years as u64;
+        let years = u64::from(duration_years);
         let fee_breakdown = FeeBreakdown {
             base_fee: BASE_FEE_PER_YEAR.saturating_mul(years),
             premium_fee: PREMIUM_FEE,
@@ -180,7 +174,7 @@ impl XlmNsClient {
             fee_currency: DEFAULT_FEE_CURRENCY.to_string(),
             expires_at,
             quoted_at: MOCK_REFERENCE_TIMESTAMP,
-            contract_id: self.registry_contract_id.clone(),
+            contract_id: self.registrar_contract_id.clone(),
         })
     }
 
@@ -203,7 +197,7 @@ impl XlmNsClient {
             status: SubmissionStatus::Submitted,
             ledger: None,
             submitted_at: MOCK_REFERENCE_TIMESTAMP,
-            contract_id: self.registry_contract_id.clone(),
+            contract_id: self.registrar_contract_id.clone(),
             network_passphrase: self.network_passphrase.clone(),
             signer: request.signer.clone(),
         };
@@ -228,7 +222,7 @@ impl XlmNsClient {
             ));
         }
 
-        let years = request.additional_years as u64;
+        let years = u64::from(request.additional_years);
         let fee_paid = BASE_FEE_PER_YEAR
             .saturating_mul(years)
             .saturating_add(NETWORK_FEE);
@@ -238,7 +232,7 @@ impl XlmNsClient {
             status: SubmissionStatus::Submitted,
             ledger: None,
             submitted_at: MOCK_REFERENCE_TIMESTAMP,
-            contract_id: self.registry_contract_id.clone(),
+            contract_id: self.registrar_contract_id.clone(),
             network_passphrase: self.network_passphrase.clone(),
             signer: request.signer.clone(),
         };
@@ -273,7 +267,6 @@ impl XlmNsClient {
         })
     }
 
-    // Subdomain methods
     pub fn register_parent(&self, request: RegisterParentRequest) -> Result<(), SdkError> {
         if request.parent.trim().is_empty() {
             return Err(SdkError::InvalidRequest("parent must not be empty".into()));
@@ -281,7 +274,7 @@ impl XlmNsClient {
         if request.owner.trim().is_empty() {
             return Err(SdkError::InvalidRequest("owner must not be empty".into()));
         }
-        // Mock implementation
+
         Ok(())
     }
 
@@ -292,11 +285,14 @@ impl XlmNsClient {
         if request.controller.trim().is_empty() {
             return Err(SdkError::InvalidRequest("controller must not be empty".into()));
         }
-        // Mock implementation
+
         Ok(())
     }
 
-    pub fn create_subdomain(&self, request: CreateSubdomainRequest) -> Result<String, SdkError> {
+    pub fn create_subdomain(
+        &self,
+        request: crate::types::CreateSubdomainRequest,
+    ) -> Result<String, SdkError> {
         if request.label.trim().is_empty() {
             return Err(SdkError::InvalidRequest("label must not be empty".into()));
         }
@@ -306,7 +302,7 @@ impl XlmNsClient {
         if request.owner.trim().is_empty() {
             return Err(SdkError::InvalidRequest("owner must not be empty".into()));
         }
-        // Mock implementation
+
         Ok(format!("{}.{}", request.label, request.parent))
     }
 
@@ -317,29 +313,29 @@ impl XlmNsClient {
         if request.new_owner.trim().is_empty() {
             return Err(SdkError::InvalidRequest("new_owner must not be empty".into()));
         }
-        // Mock implementation
+
         Ok(())
     }
 
-    // Bridge methods
     pub fn register_chain(&self, request: RegisterChainRequest) -> Result<(), SdkError> {
         if request.chain.trim().is_empty() {
             return Err(SdkError::InvalidRequest("chain must not be empty".into()));
         }
-        // Validate supported chains
+
         match request.chain.as_str() {
-            "base" | "ethereum" | "arbitrum" => {},
-            _ => return Err(SdkError::InvalidRequest(format!("unsupported chain: {}", request.chain))),
+            "base" | "ethereum" | "arbitrum" => Ok(()),
+            _ => Err(SdkError::InvalidRequest(format!(
+                "unsupported chain: {}",
+                request.chain
+            ))),
         }
-        // Mock implementation
-        Ok(())
     }
 
     pub fn get_route(&self, chain: &str) -> Result<Option<BridgeRoute>, SdkError> {
         if chain.trim().is_empty() {
             return Err(SdkError::InvalidRequest("chain must not be empty".into()));
         }
-        // Mock implementation - return hardcoded routes
+
         let route = match chain {
             "base" => Some(BridgeRoute {
                 destination_chain: "base".to_string(),
@@ -358,6 +354,7 @@ impl XlmNsClient {
             }),
             _ => None,
         };
+
         Ok(route)
     }
 
@@ -368,21 +365,35 @@ impl XlmNsClient {
         if request.chain.trim().is_empty() {
             return Err(SdkError::InvalidRequest("chain must not be empty".into()));
         }
-        // Check if chain is supported
         if self.get_route(&request.chain)?.is_none() {
-            return Err(SdkError::InvalidRequest(format!("unsupported chain: {}", request.chain)));
+            return Err(SdkError::InvalidRequest(format!(
+                "unsupported chain: {}",
+                request.chain
+            )));
         }
-        // Mock implementation - build GMP message
-        let message = format!(
+
+        let resolver = match request.chain.as_str() {
+            "base" => "0xbaseResolver",
+            "ethereum" => "0xethResolver",
+            "arbitrum" => "0xarbResolver",
+            _ => unreachable!(),
+        };
+
+        Ok(format!(
             "{{\"type\":\"xlm-ns-resolution\",\"name\":\"{}\",\"destination_chain\":\"{}\",\"resolver\":\"{}\"}}",
-            request.name, request.chain,
-            match request.chain.as_str() {
-                "base" => "0xbaseResolver",
-                "ethereum" => "0xethResolver",
-                "arbitrum" => "0xarbResolver",
-                _ => unreachable!(),
-            }
-        );
-        Ok(message)
+            request.name, request.chain, resolver
+        ))
+    }
+
+    pub fn get_nft_record(&self, token_id: &str) -> Result<NftRecord, SdkError> {
+        if token_id.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("token_id must not be empty".into()));
+        }
+
+        Ok(NftRecord {
+            token_id: token_id.to_string(),
+            owner: "GDRA...NFT_OWNER".to_string(),
+            metadata_uri: Some(format!("ipfs://mock-metadata/{token_id}")),
+        })
     }
 }

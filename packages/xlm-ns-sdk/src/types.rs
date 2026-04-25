@@ -199,6 +199,13 @@ pub struct BridgeRoute {
     pub gateway: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NftRecord {
+    pub token_id: String,
+    pub owner: String,
+    pub metadata_uri: Option<String>,
+}
+
 // Contract types for RPC calls
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct RegistryEntry {
