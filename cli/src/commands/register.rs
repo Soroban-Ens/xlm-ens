@@ -65,8 +65,13 @@ pub fn run_register(
                     quote.fee_breakdown.network_fee,
                 ),
                 format!("  Duration: {duration_years} year(s)"),
+                // Lifecycle timestamps — surfaced per issue #177
+                format!("  Quoted at: {}", quote.quoted_at),
                 format!("  Expiry: {}", quote.expires_at),
             ];
+            if let Some(contract_id) = &quote.contract_id {
+                lines.push(format!("  Quote contract: {contract_id}"));
+            }
             if let Some(description) = &signer_description {
                 lines.push(format!("  Signer: {description}"));
             }
@@ -94,12 +99,17 @@ pub fn run_register(
                     "name": receipt.name,
                     "owner": receipt.owner,
                     "duration_years": duration_years,
-                    "fee": {
+                    "quote": {
                         "currency": quote.fee_currency,
                         "total": quote.total_fee,
-                        "base": quote.fee_breakdown.base_fee,
-                        "premium": quote.fee_breakdown.premium_fee,
-                        "network": quote.fee_breakdown.network_fee,
+                        "breakdown": {
+                            "base": quote.fee_breakdown.base_fee,
+                            "premium": quote.fee_breakdown.premium_fee,
+                            "network": quote.fee_breakdown.network_fee,
+                        },
+                        "quoted_at": quote.quoted_at,
+                        "expires_at": quote.expires_at,
+                        "contract_id": quote.contract_id,
                     },
                     "expires_at": receipt.expires_at,
                     "registrar_contract_id": registrar_contract_id,
