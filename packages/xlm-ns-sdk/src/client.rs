@@ -97,6 +97,34 @@ impl XlmNsClient {
         }))
     }
 
+    pub fn list_registrations_by_owner(
+        &self,
+        owner: &str,
+    ) -> Result<Vec<ResolutionResult>, SdkError> {
+        if owner.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("owner must not be empty".into()));
+        }
+
+        if owner == "GDRA...EMPTY" {
+            return Ok(Vec::new());
+        }
+
+        Ok(vec![
+            ResolutionResult {
+                name: "alice.xlm".to_string(),
+                address: Some(owner.to_string()),
+                resolver: self.resolver_contract_id.clone(),
+                expires_at: Some(MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR),
+            },
+            ResolutionResult {
+                name: "bob.xlm".to_string(),
+                address: Some(owner.to_string()),
+                resolver: self.resolver_contract_id.clone(),
+                expires_at: Some(MOCK_REFERENCE_TIMESTAMP + (2 * SECONDS_PER_YEAR)),
+            },
+        ])
+    }
+
     pub fn reverse_resolve(&self, address: &str) -> Result<ReverseResolution, SdkError> {
         if address.trim().is_empty() {
             return Err(SdkError::InvalidRequest("address must not be empty".into()));
@@ -124,7 +152,10 @@ impl XlmNsClient {
         })
     }
 
-    pub fn set_text_record(&self, update: TextRecordUpdate) -> Result<TransactionSubmission, SdkError> {
+    pub fn set_text_record(
+        &self,
+        update: TextRecordUpdate,
+    ) -> Result<TransactionSubmission, SdkError> {
         if update.name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
@@ -283,7 +314,9 @@ impl XlmNsClient {
             return Err(SdkError::InvalidRequest("parent must not be empty".into()));
         }
         if request.controller.trim().is_empty() {
-            return Err(SdkError::InvalidRequest("controller must not be empty".into()));
+            return Err(SdkError::InvalidRequest(
+                "controller must not be empty".into(),
+            ));
         }
 
         Ok(())
@@ -311,7 +344,9 @@ impl XlmNsClient {
             return Err(SdkError::InvalidRequest("fqdn must not be empty".into()));
         }
         if request.new_owner.trim().is_empty() {
-            return Err(SdkError::InvalidRequest("new_owner must not be empty".into()));
+            return Err(SdkError::InvalidRequest(
+                "new_owner must not be empty".into(),
+            ));
         }
 
         Ok(())
@@ -387,7 +422,9 @@ impl XlmNsClient {
 
     pub fn get_nft_record(&self, token_id: &str) -> Result<NftRecord, SdkError> {
         if token_id.trim().is_empty() {
-            return Err(SdkError::InvalidRequest("token_id must not be empty".into()));
+            return Err(SdkError::InvalidRequest(
+                "token_id must not be empty".into(),
+            ));
         }
 
         Ok(NftRecord {

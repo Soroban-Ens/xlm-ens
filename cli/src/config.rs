@@ -159,8 +159,14 @@ pub struct ResolveOptions {
 
 #[derive(Debug)]
 pub enum ConfigError {
-    Read { path: PathBuf, source: std::io::Error },
-    Parse { path: PathBuf, source: toml::de::Error },
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    Parse {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
 }
 
 impl fmt::Display for ConfigError {
@@ -170,7 +176,11 @@ impl fmt::Display for ConfigError {
                 write!(f, "failed to read config file {}: {source}", path.display())
             }
             Self::Parse { path, source } => {
-                write!(f, "failed to parse config file {}: {source}", path.display())
+                write!(
+                    f,
+                    "failed to parse config file {}: {source}",
+                    path.display()
+                )
             }
         }
     }
@@ -178,7 +188,10 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-pub fn load_config(network: Network, options: ResolveOptions) -> Result<NetworkConfig, ConfigError> {
+pub fn load_config(
+    network: Network,
+    options: ResolveOptions,
+) -> Result<NetworkConfig, ConfigError> {
     let file = load_config_file(options.config_path.clone())?;
     let file_values = file
         .as_ref()
@@ -314,7 +327,9 @@ impl PartialNetworkConfig {
     }
 }
 
-fn load_config_file(explicit_path: Option<PathBuf>) -> Result<Option<(PathBuf, FileConfig)>, ConfigError> {
+fn load_config_file(
+    explicit_path: Option<PathBuf>,
+) -> Result<Option<(PathBuf, FileConfig)>, ConfigError> {
     let requested = explicit_path.or_else(config_path_from_env);
 
     if let Some(path) = requested {
@@ -350,7 +365,11 @@ fn config_search_paths() -> Vec<PathBuf> {
     let mut paths = vec![PathBuf::from(".xlm-ns.toml"), PathBuf::from("xlm-ns.toml")];
 
     if let Some(xdg_config_home) = env::var_os("XDG_CONFIG_HOME") {
-        paths.push(PathBuf::from(xdg_config_home).join("xlm-ns").join("config.toml"));
+        paths.push(
+            PathBuf::from(xdg_config_home)
+                .join("xlm-ns")
+                .join("config.toml"),
+        );
     }
 
     if let Some(home) = env::var_os("HOME") {

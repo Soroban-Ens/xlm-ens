@@ -24,7 +24,10 @@ pub fn run_resolve(config: NetworkConfig, output: OutputFormat, name: &str) {
                     "{} -> {}\n  Resolver: {}",
                     result.name, address, resolver_contract_id
                 ),
-                None => format!("{} -> [NOT FOUND]\n  Resolver: {}", result.name, resolver_contract_id),
+                None => format!(
+                    "{} -> [NOT FOUND]\n  Resolver: {}",
+                    result.name, resolver_contract_id
+                ),
             };
             emit(
                 output,

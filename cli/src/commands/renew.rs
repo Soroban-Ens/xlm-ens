@@ -43,7 +43,10 @@ pub fn run_renew(
             lines.push(format!("  Fee Paid: {} XLM", receipt.fee_paid));
             lines.push(format!("  New Expiry: {}", receipt.new_expiry));
             lines.push(format!("  Status: {}", receipt.submission.status));
-            lines.push(format!("  Transaction Hash: {}", receipt.submission.tx_hash));
+            lines.push(format!(
+                "  Transaction Hash: {}",
+                receipt.submission.tx_hash
+            ));
 
             emit(
                 output,

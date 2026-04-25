@@ -75,10 +75,16 @@ pub fn run_register(
                 "SUCCESS: registered {} to {}",
                 receipt.name, receipt.owner
             ));
-            lines.push(format!("  Fee paid: {} {}", receipt.fee_paid, quote.fee_currency));
+            lines.push(format!(
+                "  Fee paid: {} {}",
+                receipt.fee_paid, quote.fee_currency
+            ));
             lines.push(format!("  Expires at: {}", receipt.expires_at));
             lines.push(format!("  Status: {}", receipt.submission.status));
-            lines.push(format!("  Transaction Hash: {}", receipt.submission.tx_hash));
+            lines.push(format!(
+                "  Transaction Hash: {}",
+                receipt.submission.tx_hash
+            ));
 
             emit(
                 output,

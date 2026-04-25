@@ -18,7 +18,10 @@ pub struct SignerProfile {
 
 #[derive(Debug, Clone)]
 pub enum SignerSource {
-    Environment { public_var: String, secret_var: String },
+    Environment {
+        public_var: String,
+        secret_var: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -65,8 +68,9 @@ pub fn load_profile(name: &str) -> Result<SignerProfile, SignerError> {
     let public_var = format!("XLM_NS_SIGNER_{slug}_PUBLIC");
     let secret_var = format!("XLM_NS_SIGNER_{slug}_SECRET");
 
-    let public_address = env::var(&public_var)
-        .map_err(|_| SignerError::MissingPublic { var: public_var.clone() })?;
+    let public_address = env::var(&public_var).map_err(|_| SignerError::MissingPublic {
+        var: public_var.clone(),
+    })?;
     if env::var(&secret_var).is_err() {
         return Err(SignerError::MissingSecret { var: secret_var });
     }
@@ -74,7 +78,10 @@ pub fn load_profile(name: &str) -> Result<SignerProfile, SignerError> {
     Ok(SignerProfile {
         name: trimmed.to_string(),
         public_address,
-        source: SignerSource::Environment { public_var, secret_var },
+        source: SignerSource::Environment {
+            public_var,
+            secret_var,
+        },
     })
 }
 
@@ -82,7 +89,10 @@ impl SignerProfile {
     /// Short, safe description for log output — never includes secret data.
     pub fn describe(&self) -> String {
         match &self.source {
-            SignerSource::Environment { public_var, secret_var } => format!(
+            SignerSource::Environment {
+                public_var,
+                secret_var,
+            } => format!(
                 "profile '{name}' -> {addr} (public env: {public_var}, secret env: {secret_var})",
                 name = self.name,
                 addr = self.public_address
