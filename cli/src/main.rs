@@ -205,3 +205,115 @@ fn main() {
         Commands::Completions { .. } => unreachable!("handled above"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_cmd::Command;
+    use predicates::prelude::*;
+
+    // Helper to spawn a command for the CLI binary
+    fn cli() -> Command {
+        Command::cargo_bin("xlm-ns-cli").expect("binary should be present")
+    }
+
+    #[test]
+    fn test_help_output_success() {
+        cli()
+            .arg("--help")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("XLM Name Service CLI"));
+    }
+
+    #[test]
+    fn test_invalid_command_nonzero_exit() {
+        cli()
+            .arg("not-a-real-command")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("unrecognized subcommand"));
+    }
+
+    #[test]
+    fn test_register_missing_args_nonzero_exit() {
+        cli()
+            .arg("register")
+            .assert()
+            .failure();
+    }
+
+    #[test]
+    fn test_resolve_missing_args_nonzero_exit() {
+        cli()
+            .arg("resolve")
+            .assert()
+            .failure();
+    }
+
+    #[test]
+    fn test_reverse_lookup_missing_args_nonzero_exit() {
+        cli()
+            .arg("reverse-lookup")
+            .assert()
+            .failure();
+    }
+
+    #[test]
+    fn test_text_missing_args_nonzero_exit() {
+        cli()
+            .arg("text")
+            .arg("get")
+            .assert()
+            .failure();
+    }
+
+    #[test]
+    fn test_transfer_missing_args_nonzero_exit() {
+        cli()
+            .arg("transfer")
+            .assert()
+            .failure();
+    }
+
+    #[test]
+    fn test_renew_missing_args_nonzero_exit() {
+        cli()
+            .arg("renew")
+            .assert()
+            .failure();
+    }
+
+    #[test]
+    fn test_auction_missing_args_nonzero_exit() {
+        cli()
+            .arg("auction")
+            .assert()
+            .failure();
+    }
+
+    #[test]
+    fn test_bridge_missing_args_nonzero_exit() {
+        cli()
+            .arg("bridge")
+            .assert()
+            .failure();
+    }
+
+    // Success paths are tested via clap's try_parse_from to cleanly 
+    // assert command structure validity without generating actual network/RPC calls.
+    #[test]
+    fn test_success_paths_parse_correctly() {
+        assert!(Cli::try_parse_from(["xlm-ns", "register", "timmy.xlm", "G12345"]).is_ok());
+        assert!(Cli::try_parse_from(["xlm-ns", "resolve", "timmy.xlm"]).is_ok());
+        assert!(Cli::try_parse_from(["xlm-ns", "reverse-lookup", "G12345"]).is_ok());
+        
+        assert!(Cli::try_parse_from(["xlm-ns", "text", "get", "timmy.xlm", "url"]).is_ok());
+        assert!(Cli::try_parse_from(["xlm-ns", "text", "set", "timmy.xlm", "url", "https://example.com"]).is_ok());
+        
+        assert!(Cli::try_parse_from(["xlm-ns", "transfer", "timmy.xlm", "G12345"]).is_ok());
+        assert!(Cli::try_parse_from(["xlm-ns", "renew", "timmy.xlm", "2"]).is_ok());
+        assert!(Cli::try_parse_from(["xlm-ns", "auction", "timmy.xlm", "100"]).is_ok());
+        assert!(Cli::try_parse_from(["xlm-ns", "completions", "bash"]).is_ok());
+    }
+}
