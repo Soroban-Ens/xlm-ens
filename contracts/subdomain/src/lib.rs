@@ -1,8 +1,8 @@
 mod test;
 
 use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
-use xlm_ns_resolver::ResolverContractClient;
 use xlm_ns_common::soroban::{build_subdomain_name, validate_fqdn_soroban};
+use xlm_ns_resolver::ResolverContractClient;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -45,7 +45,7 @@ pub struct SubdomainContract;
 #[contractimpl]
 impl SubdomainContract {
     /// Registers a parent domain to enable subdomain creation.
-    /// 
+    ///
     /// Safe Bootstrap Path: The parent owner must register the parent domain
     /// exactly once. Subsequent attempts to register the same parent domain
     /// will be rejected to prevent unauthorized takeover of the parent namespace.
@@ -60,9 +60,7 @@ impl SubdomainContract {
             owner,
             controllers: Vec::new(&env),
         };
-        env.storage()
-            .persistent()
-            .set(&key, &record);
+        env.storage().persistent().set(&key, &record);
         Ok(())
     }
 
@@ -163,11 +161,7 @@ impl SubdomainContract {
     /// - The current owner of the subdomain can delete it.
     /// - The owner or a delegated controller of the parent domain can revoke it
     ///   (e.g., to reclaim the namespace or enforce namespace rules).
-    pub fn revoke(
-        env: Env,
-        fqdn: String,
-        caller: Address,
-    ) -> Result<(), SubdomainError> {
+    pub fn revoke(env: Env, fqdn: String, caller: Address) -> Result<(), SubdomainError> {
         let record = get_subdomain(&env, &fqdn)?;
 
         let mut is_authorized = false;
@@ -193,11 +187,7 @@ impl SubdomainContract {
     /// - The current owner of the subdomain can delete it.
     /// - The owner or a delegated controller of the parent domain can revoke it
     ///   (e.g., to reclaim the namespace or enforce namespace rules).
-    pub fn revoke(
-        env: Env,
-        fqdn: String,
-        caller: Address,
-    ) -> Result<(), SubdomainError> {
+    pub fn revoke(env: Env, fqdn: String, caller: Address) -> Result<(), SubdomainError> {
         let record = get_subdomain(&env, &fqdn)?;
 
         let mut is_authorized = false;

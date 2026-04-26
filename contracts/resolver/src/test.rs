@@ -232,7 +232,9 @@ mod tests {
         assert_eq!(record.address, new_address);
         assert_eq!(record.text_records.len(), 1);
         assert_eq!(
-            record.text_records.get(String::from_str(&env, "com.twitter")),
+            record
+                .text_records
+                .get(String::from_str(&env, "com.twitter")),
             Some(String::from_str(&env, "@timmy"))
         );
         assert_eq!(record.updated_at, 102);

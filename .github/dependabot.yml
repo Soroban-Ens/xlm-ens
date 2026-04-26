@@ -1,0 +1,72 @@
+version: 2
+
+updates:
+  # ── Cargo (Rust workspace) ──────────────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: UTC
+    # Group all non-breaking updates into one PR to keep noise low.
+    # Security updates are always opened individually so they can be merged fast.
+    groups:
+      soroban:
+        patterns:
+          - "soroban-*"
+          - "stellar-*"
+        update-types:
+          - minor
+          - patch
+      serde:
+        patterns:
+          - "serde"
+          - "serde_*"
+        update-types:
+          - minor
+          - patch
+      clap:
+        patterns:
+          - "clap"
+          - "clap_*"
+        update-types:
+          - minor
+          - patch
+      misc-patch:
+        update-types:
+          - patch
+    # Open at most 5 Cargo PRs at a time to prevent review pile-up.
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - rust
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      # Major version bumps require deliberate review — do not auto-propose.
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+
+  # ── GitHub Actions ──────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: UTC
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(ci)"

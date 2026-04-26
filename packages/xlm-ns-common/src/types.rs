@@ -1,5 +1,24 @@
 pub type NameHash = [u8; 32];
 
+#[cfg(feature = "soroban")]
+use soroban_sdk::{contracttype, Address, String as SorobanString};
+
+#[cfg(feature = "soroban")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct RegistryEntry {
+    pub name: SorobanString,
+    pub owner: Address,
+    pub resolver: Option<Address>,
+    pub target_address: Option<SorobanString>,
+    pub metadata_uri: Option<SorobanString>,
+    pub ttl_seconds: u64,
+    pub registered_at: u64,
+    pub expires_at: u64,
+    pub grace_period_ends_at: u64,
+    pub transfer_count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tld {
     Xlm,
