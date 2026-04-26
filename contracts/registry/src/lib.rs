@@ -1,8 +1,10 @@
 mod test;
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, IntoVal, String, Symbol, Vec};
 use xlm_ns_common::soroban::validate_fqdn_soroban;
 use xlm_ns_common::{DEFAULT_TTL_SECONDS, MAX_METADATA_URI_LENGTH};
+
+pub const ADMIN_RECOVERY_SUPPORTED: bool = false;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -56,7 +58,13 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
-    #[allow(clippy::too_many_arguments)]
+    // Mutating entrypoints require Soroban auth from the address that is
+    // authorizing the state change, rather than relying on address equality
+    // checks alone.
+    //
+    // Release policy: this registry does not support admin recovery or forced
+    // reassignment. Names can only leave an owner-controlled state through the
+    // normal expiry and grace-period flow.
     pub fn register(
         env: Env,
         name: String,
@@ -126,6 +134,14 @@ impl RegistryContract {
         put_entry(&env, &name, &entry);
         remove_owner_name(&env, &old_owner, &name);
         add_owner_name(&env, &new_owner, &name);
+        // Update resolver owner if resolver is set
+        if let Some(resolver_addr) = &entry.resolver {
+            env.invoke_contract::<()>(
+                resolver_addr,
+                &Symbol::new(&env, "update_owner"),
+                (name.clone(), new_owner.clone()).into_val(&env),
+            );
+        }
         Ok(())
     }
 
@@ -133,7 +149,7 @@ impl RegistryContract {
         env: Env,
         name: String,
         caller: Address,
-        resolver: Option<String>,
+        resolver: Option<Address>,
         now_unix: u64,
     ) -> Result<(), RegistryError> {
         caller.require_auth();
@@ -193,6 +209,15 @@ impl RegistryContract {
         if entry.owner != caller {
             return Err(RegistryError::Unauthorized);
         }
+
+        if expires_at < entry.expires_at {
+            return Err(RegistryError::InvalidExpiry);
+        }
+        if grace_period_ends_at < entry.grace_period_ends_at {
+            return Err(RegistryError::InvalidGracePeriod);
+        }
+        validate_lifecycle_timestamps(now_unix, expires_at, grace_period_ends_at)?;
+
         entry.expires_at = expires_at;
         entry.grace_period_ends_at = grace_period_ends_at;
         put_entry(&env, &name, &entry);
@@ -204,6 +229,10 @@ impl RegistryContract {
             .persistent()
             .get(&DataKey::OwnerNames(owner))
             .unwrap_or(Vec::new(&env))
+    }
+
+    pub fn supports_admin_recovery(_env: Env) -> bool {
+        ADMIN_RECOVERY_SUPPORTED
     }
 }
 

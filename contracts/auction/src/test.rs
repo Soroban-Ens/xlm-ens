@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(test)] ///////
 mod tests {
     use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
@@ -22,7 +22,7 @@ mod tests {
         assert_eq!(settlement.winner, Some(alice));
         assert_eq!(settlement.clearing_price, 300);
         assert!(settlement.sold);
-    }
+    } //
 
     #[test]
     fn test_auction_no_bids() {
@@ -97,4 +97,3 @@ mod tests {
         assert!(settlement.sold);
     }
 }
-////

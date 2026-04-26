@@ -1,0 +1,26 @@
+name: Nightly canary (public endpoints)
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: testnet
+            rpc_url: https://soroban-testnet.stellar.org
+          - name: mainnet
+            rpc_url: https://soroban-rpc.mainnet.stellar.org
+    steps:
+      - uses: actions/checkout@v4
+      - name: Canary (${{ matrix.name }})
+        env:
+          SOROBAN_RPC_URL: ${{ matrix.rpc_url }}
+        run: |
+          bash scripts/canary/public_endpoints.sh
+
