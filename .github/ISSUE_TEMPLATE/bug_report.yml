@@ -1,0 +1,69 @@
+name: Bug Report
+description: Report a bug or unexpected behaviour in xlm-ens
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much detail as you can.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `xlm-ns register alice.xlm --owner G...`
+        2. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - CLI
+        - Contracts (registry)
+        - Contracts (registrar)
+        - Contracts (resolver)
+        - Contracts (auction)
+        - Contracts (subdomain)
+        - Contracts (nft)
+        - Contracts (bridge)
+        - SDK
+        - CI / tooling
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        - OS: macOS 14 / Ubuntu 22.04
+        - Rust: 1.77
+        - soroban-cli: 0.9.x
+        - Network: testnet / mainnet

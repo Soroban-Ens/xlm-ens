@@ -14,7 +14,7 @@ mod bridge_integration {
     #[test]
     fn test_route_registration_and_message_generation() {
         let (env, client) = setup_env();
-        
+
         let chain = String::from_str(&env, "ethereum");
         let name = String::from_str(&env, "alice.xlm");
 

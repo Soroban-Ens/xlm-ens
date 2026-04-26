@@ -1,6 +1,6 @@
 mod test;
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, String, Vec};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, IntoVal, String, Symbol, Vec};
 use xlm_ns_common::soroban::validate_fqdn_soroban;
 use xlm_ns_common::{DEFAULT_TTL_SECONDS, MAX_METADATA_URI_LENGTH};
 
@@ -58,7 +58,16 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
-   
+    // Mutating entrypoints require Soroban auth from the address that is
+    // authorizing the state change, rather than relying on address equality
+    // checks alone.
+    //
+    // Release policy: this registry does not support admin recovery or forced
+    // reassignment. Names can only leave an owner-controlled state through the
+    // normal expiry and grace-period flow.
+    ///
+    /// Registers a new name, setting its initial lifecycle and ownership.
+    /// This expects cross-contract authorization from the caller via the Registrar.
     pub fn register(
         env: Env,
         name: String,
@@ -84,6 +93,11 @@ impl RegistryContract {
             }
             remove_owner_name(&env, &existing.owner, &name);
             env.storage().persistent().remove(&key);
+
+            env.events().publish(
+                (symbol_short!("name"), symbol_short!("burn")),
+                (name.clone(), existing.owner),
+            );
         }
 
         let entry = RegistryEntry {
@@ -112,6 +126,16 @@ impl RegistryContract {
         Ok(entry)
     }
 
+    pub fn check_owner(
+        env: Env,
+        name: String,
+        caller: Address,
+        now_unix: u64,
+    ) -> Result<(), RegistryError> {
+        let entry = get_entry(&env, &name)?;
+        ensure_owner(&entry, &caller, now_unix)
+    }
+
     pub fn transfer(
         env: Env,
         name: String,
@@ -128,6 +152,14 @@ impl RegistryContract {
         put_entry(&env, &name, &entry);
         remove_owner_name(&env, &old_owner, &name);
         add_owner_name(&env, &new_owner, &name);
+        // Update resolver owner if resolver is set
+        if let Some(resolver_addr) = &entry.resolver {
+            env.invoke_contract::<()>(
+                resolver_addr,
+                &Symbol::new(&env, "update_owner"),
+                (name.clone(), new_owner.clone()).into_val(&env),
+            );
+        }
         Ok(())
     }
 
@@ -135,7 +167,7 @@ impl RegistryContract {
         env: Env,
         name: String,
         caller: Address,
-        resolver: Option<String>,
+        resolver: Option<Address>,
         now_unix: u64,
     ) -> Result<(), RegistryError> {
         caller.require_auth();
@@ -220,6 +252,31 @@ impl RegistryContract {
             .unwrap_or(Vec::new(&env))
     }
 
+    pub fn burn(
+        env: Env,
+        name: String,
+        caller: Address,
+        now_unix: u64,
+    ) -> Result<(), RegistryError> {
+        caller.require_auth();
+        let entry = get_entry(&env, &name)?;
+
+        // Only the owner can burn their active name.
+        // If the name is claimable, anyone can burn it to clean up the state.
+        if entry.owner != caller && !entry.is_claimable_at(now_unix) {
+            return Err(RegistryError::Unauthorized);
+        }
+
+        remove_owner_name(&env, &entry.owner, &name);
+        env.storage().persistent().remove(&DataKey::Entry(name.clone()));
+
+        env.events().publish(
+            (symbol_short!("name"), symbol_short!("burn")),
+            (name, entry.owner),
+        );
+        Ok(())
+    }
+
     pub fn supports_admin_recovery(_env: Env) -> bool {
         ADMIN_RECOVERY_SUPPORTED
     }
@@ -281,31 +338,4 @@ fn ensure_owner(
     Ok(())
 }
 
-fn add_owner_name(env: &Env, owner: &Address, name: &String) {
-    let key = DataKey::OwnerNames(owner.clone());
-    let mut names: Vec<String> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(Vec::new(env));
-    if !names.contains(name) {
-        names.push_back(name.clone());
-        env.storage().persistent().set(&key, &names);
-    }
-}
-
-fn remove_owner_name(env: &Env, owner: &Address, name: &String) {
-    let key = DataKey::OwnerNames(owner.clone());
-    let names: Vec<String> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(Vec::new(env));
-    let mut filtered = Vec::new(env);
-    for existing in names.iter() {
-        if existing != *name {
-            filtered.push_back(existing);
-        }
-    }
-    env.storage().persistent().set(&key, &filtered);
-}
+fn add_owner_name(env: &Env, owne
