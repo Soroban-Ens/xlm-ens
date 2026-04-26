@@ -60,7 +60,9 @@ mod registrar_registry_integration {
         registrar.register(&label, &owner, &1, &quote.fee_stroops, &time.now);
 
         // Registrar should have a record.
-        let reg_record = registrar.registration(&name).expect("registrar record missing");
+        let reg_record = registrar
+            .registration(&name)
+            .expect("registrar record missing");
         assert_eq!(reg_record.owner, owner);
 
         // Registry must also have the matching entry.

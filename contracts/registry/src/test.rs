@@ -196,7 +196,10 @@ mod tests {
         }));
 
         assert!(result.is_err(), "registration without auth should fail");
-        assert_eq!(client.try_resolve(&name, &time.now), Ok(Err(RegistryError::NotFound)));
+        assert_eq!(
+            client.try_resolve(&name, &100),
+            Ok(Err(RegistryError::NotFound))
+        );
     }
 
     #[test]
@@ -336,4 +339,3 @@ mod tests {
         assert!(!client.supports_admin_recovery());
     }
 }
-/// Working on new cahnges

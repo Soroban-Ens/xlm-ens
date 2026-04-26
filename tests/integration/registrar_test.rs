@@ -52,5 +52,8 @@ fn renewal_syncs_expiry_and_grace_with_registry() {
 
     // Expiry cannot diverge between contracts after renewal.
     assert_eq!(reg_record.expires_at, updated_reg_entry.expires_at);
-    assert_eq!(reg_record.grace_period_ends_at, updated_reg_entry.grace_period_ends_at);
+    assert_eq!(
+        reg_record.grace_period_ends_at,
+        updated_reg_entry.grace_period_ends_at
+    );
 }
