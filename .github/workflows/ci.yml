@@ -82,18 +82,8 @@ jobs:
             base="$(basename "${wasm%.wasm}")"
             soroban contract spec --wasm "$wasm" --output json > "artifacts/specs/${base}.json"
           done
-
-          # Write build metadata so artifacts can be traced back to a commit
-          cat > artifacts/build-metadata.json <<EOF
-          {
-            "commit": "${{ github.sha }}",
-            "ref": "${{ github.ref }}",
-            "run_id": "${{ github.run_id }}",
-            "run_number": "${{ github.run_number }}",
-            "workflow": "${{ github.workflow }}",
-            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
+      - name: Verify SDK bindings against contract specs
+        run: scripts/check-sdk-bindings.sh artifacts/specs
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -3,13 +3,14 @@ use crate::output::{emit, emit_error, OutputFormat};
 use serde_json::json;
 use xlm_ns_sdk::client::XlmNsClient;
 
-pub fn run_whois(config: NetworkConfig, output: OutputFormat, name: &str) {
+pub async fn run_whois(config: NetworkConfig, output: OutputFormat, name: &str) -> anyhow::Result<()> {
     let client = XlmNsClient::new(
         config.rpc_url.clone(),
         Some(config.network_passphrase.clone()),
         config.registry_contract_id.clone(),
         config.subdomain_contract_id.clone(),
         config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
     )
     .with_resolver(
         config
@@ -18,7 +19,7 @@ pub fn run_whois(config: NetworkConfig, output: OutputFormat, name: &str) {
             .unwrap_or_else(|| "unknown".to_string()),
     );
 
-    match client.get_registration(name) {
+    match client.get_registration(name).await {
         Ok(Some(record)) => {
             let owner = record
                 .address
@@ -83,4 +84,5 @@ pub fn run_whois(config: NetworkConfig, output: OutputFormat, name: &str) {
             );
         }
     }
+    Ok(())
 }

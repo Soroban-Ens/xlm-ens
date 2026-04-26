@@ -1,0 +1,322 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to release (e.g. v0.2.0)"
+        required: true
+        type: string
+      dry_run:
+        description: "Dry run — build artifacts but do not publish"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  # ── Validation ─────────────────────────────────────────────────────────────
+  validate:
+    name: Validate tag matches workspace version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Parse version from tag
+        id: parse
+        run: |
+          TAG="${{ env.RELEASE_TAG }}"
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Cargo.toml version matches tag
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          TAG_VERSION="${{ steps.parse.outputs.version }}"
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Cargo.toml version ($CARGO_VERSION) does not match release tag ($TAG_VERSION)"
+            echo "Update [workspace.package] version in Cargo.toml to $TAG_VERSION before tagging."
+            exit 1
+          fi
+          echo "Version check passed: $CARGO_VERSION"
+
+  # ── Tests ───────────────────────────────────────────────────────────────────
+  test:
+    name: Workspace tests
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Rust
+        run: rustup update stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Run tests
+        run: cargo test --workspace
+
+  # ── CLI binary matrix build ─────────────────────────────────────────────────
+  build-cli:
+    name: Build CLI — ${{ matrix.target }}
+    needs: [validate, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            archive: tar.gz
+            cross: true
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            archive: zip
+            binary_suffix: .exe
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Rust
+        run: rustup update stable && rustup target add ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross (for cross-compiled targets)
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Build CLI binary
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }} -p xlm-ns-cli
+          else
+            cargo build --release --target ${{ matrix.target }} -p xlm-ns-cli
+          fi
+        shell: bash
+
+      - name: Package artifact (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          BIN="target/${{ matrix.target }}/release/xlm-ns-cli${{ matrix.binary_suffix }}"
+          ARCHIVE="xlm-ns-cli-${{ needs.validate.outputs.version }}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE" -C "$(dirname $BIN)" "$(basename $BIN)"
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Package artifact (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $bin = "target/${{ matrix.target }}/release/xlm-ns-cli${{ matrix.binary_suffix }}"
+          $archive = "xlm-ns-cli-${{ needs.validate.outputs.version }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path $bin -DestinationPath $archive
+          "ARCHIVE=${archive}" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+
+  # ── Contract WASM artifacts ─────────────────────────────────────────────────
+  build-contracts:
+    name: Build contract artifacts
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Rust
+        run: rustup update stable && rustup target add wasm32-unknown-unknown
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Install Soroban CLI
+        run: cargo install --locked soroban-cli
+
+      - name: Build contracts
+        run: |
+          cargo build --release --target wasm32-unknown-unknown \
+            -p xlm-ns-registry \
+            -p xlm-ns-registrar \
+            -p xlm-ns-resolver \
+            -p xlm-ns-auction \
+            -p xlm-ns-subdomain \
+            -p xlm-ns-nft \
+            -p xlm-ns-bridge
+
+      - name: Collect WASM and specs
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          mkdir -p release-contracts/wasm release-contracts/specs
+          cp target/wasm32-unknown-unknown/release/xlm_ns_*.wasm release-contracts/wasm/
+          for wasm in release-contracts/wasm/*.wasm; do
+            base="$(basename "${wasm%.wasm}")"
+            soroban contract spec --wasm "$wasm" --output json > "release-contracts/specs/${base}.json"
+          done
+          tar -czf "xlm-ns-contracts-${VERSION}.tar.gz" release-contracts/
+
+      - name: Upload contract artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contracts
+          path: xlm-ns-contracts-${{ needs.validate.outputs.version }}.tar.gz
+
+  # ── GitHub Release ──────────────────────────────────────────────────────────
+  publish-release:
+    name: Publish GitHub Release
+    needs: [validate, build-cli, build-contracts]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Flatten dist directory
+        run: find dist/ -type f | xargs -I{} mv {} dist/ 2>/dev/null || true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum *.tar.gz *.zip 2>/dev/null | tee SHA256SUMS.txt || sha256sum *.tar.gz | tee SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        if: inputs.dry_run != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: xlm-ns ${{ env.RELEASE_TAG }}
+          body: |
+            ## xlm-ns ${{ env.RELEASE_TAG }}
+
+            ### CLI Binaries
+
+            Pre-built binaries are attached below for Linux (x86_64, aarch64), macOS (x86_64, Apple Silicon), and Windows (x86_64).
+
+            **Verify your download:**
+            ```
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            ### Contract Artifacts
+
+            `xlm-ns-contracts-*.tar.gz` contains the compiled `.wasm` files and JSON contract specs for all seven Soroban contracts.
+
+            ### Install from crates.io
+
+            ```
+            cargo install xlm-ns-cli
+            ```
+
+            ### Changelog
+
+            See [CHANGELOG.md](CHANGELOG.md) for details on what changed in this release.
+          files: dist/*
+          fail_on_unmatched_files: false
+
+      - name: Dry-run summary
+        if: inputs.dry_run == 'true'
+        run: |
+          echo "DRY RUN — the following files would be attached to release ${{ env.RELEASE_TAG }}:"
+          ls -lh dist/
+
+  # ── Crate publish (human checkpoint required) ──────────────────────────────
+  publish-crates:
+    name: Publish crates to crates.io
+    needs: publish-release
+    runs-on: ubuntu-latest
+    environment: crates-io   # requires manual approval in GitHub Environments
+    if: inputs.dry_run != 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Rust
+        run: rustup update stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+
+      # Publish in dependency order: common → sdk → contracts → cli
+      # --no-verify skips re-running tests (already done in the test job).
+      # Each crate is published separately so partial failures are visible.
+      - name: Publish xlm-ns-common
+        run: cargo publish -p xlm-ns-common --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish xlm-ns-sdk
+        run: cargo publish -p xlm-ns-sdk --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish contracts
+        run: |
+          for pkg in xlm-ns-registry xlm-ns-registrar xlm-ns-resolver xlm-ns-auction xlm-ns-subdomain xlm-ns-nft xlm-ns-bridge; do
+            echo "Publishing $pkg…"
+            cargo publish -p "$pkg" --no-verify
+            # crates.io enforces a short delay between publishes
+            sleep 20
+          done
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish xlm-ns-cli
+        run: cargo publish -p xlm-ns-cli --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
