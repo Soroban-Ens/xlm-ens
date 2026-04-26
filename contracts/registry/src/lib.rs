@@ -123,6 +123,16 @@ impl RegistryContract {
         Ok(entry)
     }
 
+    pub fn check_owner(
+        env: Env,
+        name: String,
+        caller: Address,
+        now_unix: u64,
+    ) -> Result<(), RegistryError> {
+        let entry = get_entry(&env, &name)?;
+        ensure_owner(&entry, &caller, now_unix)
+    }
+
     pub fn transfer(
         env: Env,
         name: String,
