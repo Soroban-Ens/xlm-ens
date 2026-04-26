@@ -2,6 +2,22 @@ use soroban_sdk::{testutils::Address as _, Address, Env, String};
 use xlm_ns_registrar::{RegistrarContract, RegistrarContractClient};
 use xlm_ns_registry::{RegistryContract, RegistryContractClient};
 
+struct TimeHelper {
+    pub now: u64,
+}
+
+impl TimeHelper {
+    pub fn new(start: u64) -> Self {
+        Self { now: start }
+    }
+    pub fn advance(&mut self, seconds: u64) {
+        self.now += seconds;
+    }
+    pub fn future(&self, seconds: u64) -> u64 {
+        self.now + seconds
+    }
+}
+
 #[test]
 fn renewal_syncs_expiry_and_grace_with_registry() {
     let env = Env::default();
@@ -17,24 +33,27 @@ fn renewal_syncs_expiry_and_grace_with_registry() {
     let owner = Address::generate(&env);
     let label = String::from_str(&env, "alice");
     let name = String::from_str(&env, "alice.xlm");
-    let now: u64 = 1_000_000;
+    let mut time = TimeHelper::new(1_000_000);
 
     // Initial registration
-    let quote = registrar.quote_registration(&label, &1, &now);
-    registrar.register(&label, &owner, &1, &quote.fee_stroops, &now);
+    let quote = registrar.quote_registration(&label, &1, &time.now);
+    registrar.register(&label, &owner, &1, &quote.fee_stroops, &time.now);
 
-    let initial_reg_entry = registry.resolve(&name, &now);
+    let initial_reg_entry = registry.resolve(&name, &time.now);
     assert_eq!(initial_reg_entry.expires_at, quote.expiry_unix);
 
     // Renew
-    let renew_now = now + 100_000;
-    let renew_quote = registrar.quote_registration(&label, &1, &renew_now);
-    registrar.renew(&name, &owner, &1, &renew_quote.fee_stroops, &renew_now);
+    time.advance(100_000);
+    let renew_quote = registrar.quote_registration(&label, &1, &time.now);
+    registrar.renew(&name, &owner, &1, &renew_quote.fee_stroops, &time.now);
 
     let reg_record = registrar.registration(&name).unwrap();
-    let updated_reg_entry = registry.resolve(&name, &renew_now);
+    let updated_reg_entry = registry.resolve(&name, &time.now);
 
     // Expiry cannot diverge between contracts after renewal.
     assert_eq!(reg_record.expires_at, updated_reg_entry.expires_at);
-    assert_eq!(reg_record.grace_period_ends_at, updated_reg_entry.grace_period_ends_at);
+    assert_eq!(
+        reg_record.grace_period_ends_at,
+        updated_reg_entry.grace_period_ends_at
+    );
 }

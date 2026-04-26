@@ -1,28 +1,27 @@
+use anyhow::Context;
 use crate::config::NetworkConfig;
 use xlm_ns_sdk::client::XlmNsClient;
 
-pub fn run_reverse(config: NetworkConfig, address: &str) {
+pub async fn run_reverse(config: NetworkConfig, address: &str) -> anyhow::Result<()> {
     let client = XlmNsClient::new(
         config.rpc_url,
         Some(config.network_passphrase),
-        Some(config.registry_contract_id.clone()),
-    )
-    .with_resolver(config.resolver_contract_id);
+        config.registry_contract_id.clone(),
+        config.subdomain_contract_id.clone(),
+        config.bridge_contract_id.clone(),
+        config.auction_contract_id.clone(),
+    );
 
-    match client.reverse_resolve(address) {
-        Ok(result) => match result.primary_name {
-            Some(name) => {
-                println!("{} -> {}", result.address, name);
-                if let Some(resolver) = result.resolver {
-                    println!("  Resolver: {resolver}");
-                }
-            }
-            None => {
-                println!("{} -> [NO PRIMARY NAME]", result.address);
-            }
-        },
-        Err(e) => {
-            eprintln!("ERROR: Failed reverse lookup for {address}: {e:?}");
-        }
+    let result = client
+        .reverse_resolve(address)
+        .await
+        .context("Failed to perform reverse lookup")?;
+
+    if let Some(name) = result.primary_name {
+        println!("{} -> {}", result.address, name);
+    } else {
+        println!("{} -> [NO PRIMARY NAME]", result.address);
     }
+
+    Ok(())
 }
