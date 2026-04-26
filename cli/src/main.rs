@@ -203,6 +203,81 @@ enum AuctionCommands {
         #[arg(long)]
         signer: Option<String>,
     },
+    /// Subdomain management commands
+    /// 
+    /// Subdomain flow:
+    /// 1. Register a parent domain: xlm-ns subdomain register-parent example.xlm <owner>
+    /// 2. Add controllers (optional): xlm-ns subdomain add-controller example.xlm <controller>
+    /// 3. Create subdomains: xlm-ns subdomain create sub example.xlm <owner>
+    /// 4. Transfer subdomains: xlm-ns subdomain transfer sub.example.xlm <new_owner>
+    Subdomain {
+        #[command(subcommand)]
+        command: SubdomainCommands,
+    },
+    /// Bridge management commands
+    Bridge {
+        #[command(subcommand)]
+        command: BridgeCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum SubdomainCommands {
+    /// Register a parent domain for subdomain management
+    /// This enables the parent domain owner to create and manage subdomains
+    RegisterParent {
+        /// Parent domain name (e.g., example.xlm)
+        parent: String,
+        /// Owner address for the parent domain
+        owner: String,
+    },
+    /// Add a controller to a parent domain
+    /// Controllers can create subdomains under the parent domain
+    AddController {
+        /// Parent domain name
+        parent: String,
+        /// Controller address to add (must be called by parent owner)
+        controller: String,
+    },
+    /// Create a subdomain under a registered parent
+    /// Can be called by parent owner or authorized controllers
+    Create {
+        /// Subdomain label (e.g., 'sub' for sub.example.xlm)
+        label: String,
+        /// Parent domain name
+        parent: String,
+        /// Owner address for the new subdomain
+        owner: String,
+    },
+    /// Transfer ownership of a subdomain
+    /// Can only be called by the current subdomain owner
+    Transfer {
+        /// Full subdomain name (e.g., sub.example.xlm)
+        fqdn: String,
+        /// New owner address
+        new_owner: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum BridgeCommands {
+    /// Register a bridge route for a supported chain
+    Register {
+        /// Chain name (base, ethereum, arbitrum)
+        chain: String,
+    },
+    /// Inspect bridge route for a chain
+    Inspect {
+        /// Chain name to inspect
+        chain: String,
+    },
+    /// Generate payload for cross-chain resolution
+    Payload {
+        /// Name to resolve
+        name: String,
+        /// Target chain
+        chain: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -501,6 +576,31 @@ fn validate_contract_policy(
                 kind.flag_name(),
                 kind.env_var()
             ));
+        }
+        Commands::Subdomain { command } => match command {
+            SubdomainCommands::RegisterParent { parent, owner } => {
+                commands::subdomain::run_register_parent(config, &parent, &owner);
+            }
+            SubdomainCommands::AddController { parent, controller } => {
+                commands::subdomain::run_add_controller(config, &parent, &controller);
+            }
+            SubdomainCommands::Create { label, parent, owner } => {
+                commands::subdomain::run_create_subdomain(config, &label, &parent, &owner);
+            }
+            SubdomainCommands::Transfer { fqdn, new_owner } => {
+                commands::subdomain::run_transfer_subdomain(config, &fqdn, &new_owner);
+            }
+        }
+        Commands::Bridge { command } => match command {
+            BridgeCommands::Register { chain } => {
+                commands::bridge::run_register_chain(config, &chain);
+            }
+            BridgeCommands::Inspect { chain } => {
+                commands::bridge::run_inspect_route(config, &chain);
+            }
+            BridgeCommands::Payload { name, chain } => {
+                commands::bridge::run_generate_payload(config, &name, &chain);
+            }
         }
     }
 

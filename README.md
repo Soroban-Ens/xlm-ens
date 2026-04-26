@@ -183,6 +183,14 @@ The registration flow is now integrated on-chain:
 3. Set resolver records for forward and reverse lookups.
 4. Optionally mint an NFT and configure bridge routes or subdomains.
 
+## Registry-Resolver Synchronization
+
+To prevent ownership drift between registry and resolver, resolver operations are authorized against the registry's ownership state rather than the resolver's stored owner field. The resolver contract stores a registry address and queries it for ownership checks during writes.
+
+When a name is transferred in the registry, the resolver's stored owner is updated to maintain consistency and provide accurate ownership information in resolution records.
+
+This ensures a single source of truth for ownership across the system.
+
 ## Naming and validation rules
 
 Shared validation currently enforces:
