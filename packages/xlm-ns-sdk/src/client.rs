@@ -1,3 +1,4 @@
+use crate::config::ClientConfig;
 use crate::errors::SdkError;
 use crate::types::{
     AddControllerRequest, AuctionCreateRequest, AuctionInfo, AuctionStatus, BidRequest,
@@ -26,6 +27,7 @@ pub struct XlmNsClient {
     pub bridge_contract_id: Option<String>,
     pub subdomain_contract_id: Option<String>,
     pub nft_contract_id: Option<String>,
+    pub config: ClientConfig,
 }
 
 impl XlmNsClient {
@@ -47,7 +49,15 @@ impl XlmNsClient {
             bridge_contract_id,
             subdomain_contract_id,
             nft_contract_id: None,
+            config: ClientConfig::default(),
         }
+    }
+
+    /// Start a fluent builder for the client. Use this when you need to
+    /// customize transport behavior (timeout, retry, user-agent) before any
+    /// requests go out.
+    pub fn builder(rpc_url: impl Into<String>) -> XlmNsClientBuilder {
+        XlmNsClientBuilder::new(rpc_url)
     }
 
     pub fn with_registrar(mut self, registrar_contract_id: impl Into<String>) -> Self {
@@ -70,13 +80,25 @@ impl XlmNsClient {
         self
     }
 
+    /// Replace the client's transport configuration (timeout / retry /
+    /// user-agent). See [`ClientConfig`] for the available knobs.
+    pub fn with_config(mut self, config: ClientConfig) -> Self {
+        self.config = config;
+        self
+    }
+
     pub async fn resolve(&self, name: &str) -> Result<ResolutionResult, SdkError> {
-        let rpc = Client::new(&self.rpc_url).map_err(|e| SdkError::InvalidRequest(e.to_string()))?;
-        let registry_id = self.registry_contract_id.as_ref()
-            .ok_or(SdkError::InvalidRequest("registry contract ID not configured".into()))?;
+        let rpc =
+            Client::new(&self.rpc_url).map_err(|e| SdkError::InvalidRequest(e.to_string()))?;
+        let registry_id = self
+            .registry_contract_id
+            .as_ref()
+            .ok_or(SdkError::InvalidRequest(
+                "registry contract ID not configured".into(),
+            ))?;
 
         let entry = self.query_registry(&rpc, registry_id, name).await?;
-        
+
         let mut result = ResolutionResult {
             name: name.to_string(),
             address: entry.target_address,
@@ -93,14 +115,24 @@ impl XlmNsClient {
         Ok(result)
     }
 
-    async fn query_registry(&self, client: &Client, _contract_id: &str, name: &str) -> Result<RegistryEntry, SdkError> {
-        let _network = client.get_network().await
+    async fn query_registry(
+        &self,
+        client: &Client,
+        _contract_id: &str,
+        name: &str,
+    ) -> Result<RegistryEntry, SdkError> {
+        let _network = client
+            .get_network()
+            .await
             .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
 
         Ok(RegistryEntry {
             name: name.to_string(),
             owner: "GDRA...OWNER".to_string(),
-            resolver: self.resolver_contract_id.clone().or(Some("CDAD...RESOLVER".to_string())),
+            resolver: self
+                .resolver_contract_id
+                .clone()
+                .or(Some("CDAD...RESOLVER".to_string())),
             target_address: Some("GDRA...TARGET".to_string()),
             metadata_uri: None,
             ttl_seconds: 3600,
@@ -111,8 +143,15 @@ impl XlmNsClient {
         })
     }
 
-    async fn query_resolver(&self, client: &Client, _contract_id: &str, _name: &str) -> Result<Option<ResolutionRecord>, SdkError> {
-        let _network = client.get_network().await
+    async fn query_resolver(
+        &self,
+        client: &Client,
+        _contract_id: &str,
+        _name: &str,
+    ) -> Result<Option<ResolutionRecord>, SdkError> {
+        let _network = client
+            .get_network()
+            .await
             .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
 
         Ok(Some(ResolutionRecord {
@@ -243,7 +282,10 @@ impl XlmNsClient {
         })
     }
 
-    pub async fn register(&self, request: RegistrationRequest) -> Result<RegistrationReceipt, SdkError> {
+    pub async fn register(
+        &self,
+        request: RegistrationRequest,
+    ) -> Result<RegistrationReceipt, SdkError> {
         if request.label.trim().is_empty() {
             return Err(SdkError::InvalidRequest("label must not be empty".into()));
         }
@@ -256,7 +298,9 @@ impl XlmNsClient {
             ));
         }
 
-        let quote = self.quote_registration(&request.label, request.duration_years).await?;
+        let quote = self
+            .quote_registration(&request.label, request.duration_years)
+            .await?;
         let submission = TransactionSubmission {
             tx_hash: "tx_abc123789xyz".to_string(),
             status: SubmissionStatus::Submitted,
@@ -311,7 +355,10 @@ impl XlmNsClient {
         })
     }
 
-    pub async fn transfer(&self, request: TransferRequest) -> Result<TransactionSubmission, SdkError> {
+    pub async fn transfer(
+        &self,
+        request: TransferRequest,
+    ) -> Result<TransactionSubmission, SdkError> {
         if request.name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
@@ -373,7 +420,10 @@ impl XlmNsClient {
         Ok(format!("{}.{}", request.label, request.parent))
     }
 
-    pub async fn transfer_subdomain(&self, request: TransferSubdomainRequest) -> Result<(), SdkError> {
+    pub async fn transfer_subdomain(
+        &self,
+        request: TransferSubdomainRequest,
+    ) -> Result<(), SdkError> {
         if request.fqdn.trim().is_empty() {
             return Err(SdkError::InvalidRequest("fqdn must not be empty".into()));
         }
@@ -472,7 +522,7 @@ impl XlmNsClient {
         if name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
-        
+
         if name == "active.xlm" {
             Ok(Some(AuctionInfo {
                 name: name.to_string(),
@@ -498,11 +548,14 @@ impl XlmNsClient {
         }
     }
 
-    pub async fn create_auction(&self, request: AuctionCreateRequest) -> Result<TransactionSubmission, SdkError> {
+    pub async fn create_auction(
+        &self,
+        request: AuctionCreateRequest,
+    ) -> Result<TransactionSubmission, SdkError> {
         if request.name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
-        
+
         Ok(TransactionSubmission {
             tx_hash: "tx_auction_create_mock".to_string(),
             status: SubmissionStatus::Submitted,
@@ -514,12 +567,17 @@ impl XlmNsClient {
         })
     }
 
-    pub async fn bid_auction(&self, request: BidRequest) -> Result<TransactionSubmission, SdkError> {
+    pub async fn bid_auction(
+        &self,
+        request: BidRequest,
+    ) -> Result<TransactionSubmission, SdkError> {
         if request.name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
         if request.amount == 0 {
-            return Err(SdkError::InvalidRequest("bid amount must be greater than zero".into()));
+            return Err(SdkError::InvalidRequest(
+                "bid amount must be greater than zero".into(),
+            ));
         }
 
         Ok(TransactionSubmission {
@@ -533,7 +591,11 @@ impl XlmNsClient {
         })
     }
 
-    pub async fn settle_auction(&self, name: &str, signer: Option<String>) -> Result<TransactionSubmission, SdkError> {
+    pub async fn settle_auction(
+        &self,
+        name: &str,
+        signer: Option<String>,
+    ) -> Result<TransactionSubmission, SdkError> {
         if name.trim().is_empty() {
             return Err(SdkError::InvalidRequest("name must not be empty".into()));
         }
@@ -547,5 +609,98 @@ impl XlmNsClient {
             network_passphrase: self.network_passphrase.clone(),
             signer,
         })
+    }
+}
+
+/// Fluent builder for [`XlmNsClient`]. Construct with
+/// [`XlmNsClient::builder`].
+#[derive(Debug, Clone)]
+pub struct XlmNsClientBuilder {
+    rpc_url: String,
+    network_passphrase: Option<String>,
+    registry_contract_id: Option<String>,
+    registrar_contract_id: Option<String>,
+    resolver_contract_id: Option<String>,
+    auction_contract_id: Option<String>,
+    bridge_contract_id: Option<String>,
+    subdomain_contract_id: Option<String>,
+    nft_contract_id: Option<String>,
+    config: ClientConfig,
+}
+
+impl XlmNsClientBuilder {
+    fn new(rpc_url: impl Into<String>) -> Self {
+        Self {
+            rpc_url: rpc_url.into(),
+            network_passphrase: None,
+            registry_contract_id: None,
+            registrar_contract_id: None,
+            resolver_contract_id: None,
+            auction_contract_id: None,
+            bridge_contract_id: None,
+            subdomain_contract_id: None,
+            nft_contract_id: None,
+            config: ClientConfig::default(),
+        }
+    }
+
+    pub fn network_passphrase(mut self, passphrase: impl Into<String>) -> Self {
+        self.network_passphrase = Some(passphrase.into());
+        self
+    }
+
+    pub fn registry(mut self, contract_id: impl Into<String>) -> Self {
+        self.registry_contract_id = Some(contract_id.into());
+        self
+    }
+
+    pub fn registrar(mut self, contract_id: impl Into<String>) -> Self {
+        self.registrar_contract_id = Some(contract_id.into());
+        self
+    }
+
+    pub fn resolver(mut self, contract_id: impl Into<String>) -> Self {
+        self.resolver_contract_id = Some(contract_id.into());
+        self
+    }
+
+    pub fn auction(mut self, contract_id: impl Into<String>) -> Self {
+        self.auction_contract_id = Some(contract_id.into());
+        self
+    }
+
+    pub fn bridge(mut self, contract_id: impl Into<String>) -> Self {
+        self.bridge_contract_id = Some(contract_id.into());
+        self
+    }
+
+    pub fn subdomain(mut self, contract_id: impl Into<String>) -> Self {
+        self.subdomain_contract_id = Some(contract_id.into());
+        self
+    }
+
+    pub fn nft(mut self, contract_id: impl Into<String>) -> Self {
+        self.nft_contract_id = Some(contract_id.into());
+        self
+    }
+
+    pub fn config(mut self, config: ClientConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn build(self) -> XlmNsClient {
+        XlmNsClient {
+            rpc_url: self.rpc_url,
+            network_passphrase: self.network_passphrase,
+            registry_contract_id: self.registry_contract_id,
+            registrar_contract_id: self.registrar_contract_id,
+            resolver_contract_id: self.resolver_contract_id,
+            auction_contract_id: self.auction_contract_id,
+            bridge_contract_id: self.bridge_contract_id,
+            subdomain_contract_id: self.subdomain_contract_id,
+            nft_contract_id: self.nft_contract_id,
+            config: self.config,
+        }
     }
 }
