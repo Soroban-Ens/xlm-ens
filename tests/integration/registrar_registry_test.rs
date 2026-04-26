@@ -11,6 +11,22 @@ mod registrar_registry_integration {
     use xlm_ns_registrar::{RegistrarContract, RegistrarContractClient};
     use xlm_ns_registry::{RegistryContract, RegistryContractClient};
 
+    struct TimeHelper {
+        pub now: u64,
+    }
+
+    impl TimeHelper {
+        pub fn new(start: u64) -> Self {
+            Self { now: start }
+        }
+        pub fn advance(&mut self, seconds: u64) {
+            self.now += seconds;
+        }
+        pub fn future(&self, seconds: u64) -> u64 {
+            self.now + seconds
+        }
+    }
+
     fn setup_env() -> (
         Env,
         RegistrarContractClient<'static>,
@@ -38,10 +54,10 @@ mod registrar_registry_integration {
         let owner = Address::generate(&env);
         let label = String::from_str(&env, "alice");
         let name = String::from_str(&env, "alice.xlm");
-        let now: u64 = 1_000_000;
+        let time = TimeHelper::new(1_000_000);
 
-        let quote = registrar.quote_registration(&label, &1, &now);
-        registrar.register(&label, &owner, &1, &quote.fee_stroops, &now);
+        let quote = registrar.quote_registration(&label, &1, &time.now);
+        registrar.register(&label, &owner, &1, &quote.fee_stroops, &time.now);
 
         // Registrar should have a record.
         let reg_record = registrar
@@ -50,7 +66,7 @@ mod registrar_registry_integration {
         assert_eq!(reg_record.owner, owner);
 
         // Registry must also have the matching entry.
-        let reg_entry = registry.resolve(&name, &now);
+        let reg_entry = registry.resolve(&name, &time.now);
         assert_eq!(reg_entry.owner, owner);
     }
 
@@ -62,13 +78,13 @@ mod registrar_registry_integration {
         let owner = Address::generate(&env);
         let label = String::from_str(&env, "bob");
         let name = String::from_str(&env, "bob.xlm");
-        let now: u64 = 2_000_000;
+        let time = TimeHelper::new(2_000_000);
 
-        let quote = registrar.quote_registration(&label, &2, &now);
-        registrar.register(&label, &owner, &2, &quote.fee_stroops, &now);
+        let quote = registrar.quote_registration(&label, &2, &time.now);
+        registrar.register(&label, &owner, &2, &quote.fee_stroops, &time.now);
 
         let reg_record = registrar.registration(&name).unwrap();
-        let reg_entry = registry.resolve(&name, &now);
+        let reg_entry = registry.resolve(&name, &time.now);
 
         assert_eq!(
             reg_record.expires_at, reg_entry.expires_at,
@@ -88,18 +104,18 @@ mod registrar_registry_integration {
         let owner = Address::generate(&env);
         let label = String::from_str(&env, "carol");
         let name = String::from_str(&env, "carol.xlm");
-        let now: u64 = 3_000_000;
+        let mut time = TimeHelper::new(3_000_000);
 
         // Initial registration.
-        let quote = registrar.quote_registration(&label, &1, &now);
-        registrar.register(&label, &owner, &1, &quote.fee_stroops, &now);
+        let quote = registrar.quote_registration(&label, &1, &time.now);
+        registrar.register(&label, &owner, &1, &quote.fee_stroops, &time.now);
 
         // Renew shortly after.
-        let renew_now: u64 = now + 1_000;
-        registrar.renew(&name, &owner, &1, &quote.fee_stroops, &renew_now);
+        time.advance(1_000);
+        registrar.renew(&name, &owner, &1, &quote.fee_stroops, &time.now);
 
         let reg_record = registrar.registration(&name).unwrap();
-        let reg_entry = registry.resolve(&name, &renew_now);
+        let reg_entry = registry.resolve(&name, &time.now);
 
         assert!(
             reg_record.expires_at > quote.expiry_unix,
@@ -123,13 +139,13 @@ mod registrar_registry_integration {
         let owner = Address::generate(&env);
         let label = String::from_str(&env, "dave");
         let name = String::from_str(&env, "dave.xlm");
-        let now: u64 = 5_000_000;
+        let time = TimeHelper::new(5_000_000);
 
-        let quote = registrar.quote_registration(&label, &3, &now);
-        registrar.register(&label, &owner, &3, &quote.fee_stroops, &now);
+        let quote = registrar.quote_registration(&label, &3, &time.now);
+        registrar.register(&label, &owner, &3, &quote.fee_stroops, &time.now);
 
         // Check just before expiry.
-        let near_expiry = quote.expiry_unix - 1;
+        let near_expiry = time.future((quote.expiry_unix - time.now) - 1);
         let entry = registry.resolve(&name, &near_expiry);
         assert_eq!(entry.owner, owner);
         assert_eq!(entry.expires_at, quote.expiry_unix);
