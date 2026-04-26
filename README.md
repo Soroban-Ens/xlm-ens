@@ -21,6 +21,14 @@ The target user experience is straightforward:
 - Premium names can be sold through auctions instead of first-come-first-served
   issuance.
 
+## Architecture
+
+For a detailed breakdown of state ownership, cross-contract flows, and synchronization rules, see the Architecture Documentation.
+
+## Security and Threat Model
+
+For information regarding trust boundaries, admin powers, and open risks, please refer to the Security Assumptions and Threat Model.
+
 ## Current status
 
 The workspace now contains real contract-domain logic instead of only placeholder
@@ -110,6 +118,20 @@ stubs:
 - `scripts/`
   Shell helpers for deploy, invoke, and local setup tasks.
 
+#### CLI output modes
+
+All CLI commands accept `--output human` (default) or `--output json` for automation-friendly output.
+
+Examples:
+
+- `cargo run -p xlm-ns-cli -- resolve timmy.xlm --output json`
+- `cargo run -p xlm-ns-cli -- whois timmy.xlm --output json`
+- `cargo run -p xlm-ns-cli -- portfolio GDRA...OWNER_ADDR --output json`
+
+#### Contract spec artifacts (CI)
+
+CI uploads a `soroban-contract-artifacts` artifact containing built contract WASM files and extracted contract specs (JSON).
+
 - `tests/`
   Placeholders for integration scenarios and test fixtures shared across crates.
 
@@ -134,6 +156,21 @@ registration lifecycle:
 - Active: `now <= expires_at`
 - Grace period: `expires_at < now <= grace_period_ends_at`
 - Claimable by a new owner: `now > grace_period_ends_at`
+
+## Release and recovery policy
+
+The current product policy is intentionally conservative:
+
+- Admin recovery is not supported in either the registrar or the registry.
+- There is no privileged forced transfer, forced burn, or emergency reassignment
+  path for a live name.
+- A name only becomes available for a new registrant after its normal expiry and
+  grace period have both elapsed.
+
+This keeps ownership and release behavior predictable while the contracts are
+still maturing. If a future version introduces an admin recovery mechanism, it
+must define explicit Soroban auth requirements, emit an auditable contract
+event trail, and document the governance process around who can invoke it.
 
 ## Registration flow
 
@@ -165,11 +202,29 @@ Shared validation currently enforces:
 - Bounded registration durations.
 - Non-empty owner and chain identifiers.
 
-## Local development
+## Quickstart
 
-Format the workspace:
+### Prerequisites
+
+- [Rust toolchain](https://rustup.rs/) (latest stable)
+- Wasm target: `rustup target add wasm32-unknown-unknown`
+- Soroban CLI (`cargo install --locked soroban-cli`)
+
+### Bootstrap (recommended)
+
+To validate (and optionally install) the toolchain in a rerunnable way:
 
 ```sh
+./scripts/bootstrap.sh --install
+```
+
+### Local setup
+
+Clone the repository and format the workspace:
+
+```sh
+git clone https://github.com/0xVida/xlm-ens.git
+cd xlm-ens
 cargo fmt --all
 ```
 
@@ -181,6 +236,11 @@ TMPDIR=/tmp cargo test --workspace
 
 `TMPDIR=/tmp` is used here because the current sandbox environment does not allow
 Rust to create temporary build directories in the default macOS temp location.
+
+## Operator docs
+
+- Testnet operator runbook: `docs/testnet-operator-runbook.md`
+- Bridge payload + resolver schema docs: `docs/schemas.md`
 
 ## Roadmap
 
