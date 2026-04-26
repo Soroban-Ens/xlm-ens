@@ -118,6 +118,20 @@ stubs:
 - `scripts/`
   Shell helpers for deploy, invoke, and local setup tasks.
 
+#### CLI output modes
+
+All CLI commands accept `--output human` (default) or `--output json` for automation-friendly output.
+
+Examples:
+
+- `cargo run -p xlm-ns-cli -- resolve timmy.xlm --output json`
+- `cargo run -p xlm-ns-cli -- whois timmy.xlm --output json`
+- `cargo run -p xlm-ns-cli -- portfolio GDRA...OWNER_ADDR --output json`
+
+#### Contract spec artifacts (CI)
+
+CI uploads a `soroban-contract-artifacts` artifact containing built contract WASM files and extracted contract specs (JSON).
+
 - `tests/`
   Placeholders for integration scenarios and test fixtures shared across crates.
 
@@ -168,6 +182,14 @@ The registration flow is now integrated on-chain:
    materializes the name in the registry with the resulting ownership state.
 3. Set resolver records for forward and reverse lookups.
 4. Optionally mint an NFT and configure bridge routes or subdomains.
+
+## Registry-Resolver Synchronization
+
+To prevent ownership drift between registry and resolver, resolver operations are authorized against the registry's ownership state rather than the resolver's stored owner field. The resolver contract stores a registry address and queries it for ownership checks during writes.
+
+When a name is transferred in the registry, the resolver's stored owner is updated to maintain consistency and provide accurate ownership information in resolution records.
+
+This ensures a single source of truth for ownership across the system.
 
 ## Naming and validation rules
 
