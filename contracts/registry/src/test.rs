@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_registration_without_owner_auth() {
+    fn threat_unauthorized_actor_cannot_register_without_auth() {
         let env = Env::default();
         let contract_id = env.register(RegistryContract, ());
         let client = RegistryContractClient::new(&env, &contract_id);
@@ -173,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_transfer_without_caller_auth() {
+    fn threat_unauthorized_actor_cannot_transfer_without_auth() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register(RegistryContract, ());
@@ -203,6 +203,95 @@ mod tests {
         let resolved = client.resolve(&name, &101);
         assert_eq!(resolved.owner, owner);
         assert_eq!(client.names_for_owner(&next_owner).len(), 0);
+    }
+
+    #[test]
+    fn threat_actor_cannot_transfer_unowned_name() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let next_owner = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        client.register(&name, &owner, &None::<String>, &None::<String>, &100, &1_000, &2_000);
+
+        let result = client.try_transfer(&name, &attacker, &next_owner, &101);
+        assert_eq!(result, Ok(Err(RegistryError::Unauthorized)));
+    }
+
+    #[test]
+    fn threat_actor_cannot_set_resolver_for_unowned_name() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        client.register(&name, &owner, &None::<String>, &None::<String>, &100, &1_000, &2_000);
+
+        let resolver = Some(String::from_str(&env, "resolver_address"));
+        let result = client.try_set_resolver(&name, &attacker, &resolver, &101);
+        assert_eq!(result, Ok(Err(RegistryError::Unauthorized)));
+    }
+
+    #[test]
+    fn threat_actor_cannot_set_target_address_for_unowned_name() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        client.register(&name, &owner, &None::<String>, &None::<String>, &100, &1_000, &2_000);
+
+        let target = Some(String::from_str(&env, "target_address"));
+        let result = client.try_set_target_address(&name, &attacker, &target, &101);
+        assert_eq!(result, Ok(Err(RegistryError::Unauthorized)));
+    }
+
+    #[test]
+    fn threat_actor_cannot_set_metadata_for_unowned_name() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        client.register(&name, &owner, &None::<String>, &None::<String>, &100, &1_000, &2_000);
+
+        let metadata = Some(String::from_str(&env, "ipfs://hash"));
+        let result = client.try_set_metadata(&name, &attacker, &metadata, &101);
+        assert_eq!(result, Ok(Err(RegistryError::Unauthorized)));
+    }
+
+    #[test]
+    fn threat_actor_cannot_renew_unowned_name() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistryContract, ());
+        let client = RegistryContractClient::new(&env, &contract_id);
+
+        let owner = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let name = String::from_str(&env, "timmy.xlm");
+
+        client.register(&name, &owner, &None::<String>, &None::<String>, &100, &1_000, &2_000);
+
+        let result = client.try_renew(&name, &attacker, &1500, &2500, &101);
+        assert_eq!(result, Ok(Err(RegistryError::Unauthorized)));
     }
 
     #[test]

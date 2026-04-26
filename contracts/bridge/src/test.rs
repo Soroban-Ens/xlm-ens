@@ -189,4 +189,19 @@ mod tests {
         // Should panic because name doesn't end with .xlm (Error code #1 = Validation)
         client.build_message(&invalid_name, &chain);
     }
+
+    #[test]
+    fn threat_unauthorized_actor_cannot_register_chain() {
+        let env = Env::default();
+        let contract_id = env.register(BridgeContract, ());
+        let client = BridgeContractClient::new(&env, &contract_id);
+
+        let chain = String::from_str(&env, "base");
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.register_chain(&chain);
+        }));
+
+        assert!(result.is_err(), "registration of chain without auth should fail");
+    }
 }
