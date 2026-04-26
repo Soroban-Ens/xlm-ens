@@ -151,7 +151,7 @@ jobs:
           "ARCHIVE=${archive}" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cli-${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
@@ -201,7 +201,7 @@ jobs:
           tar -czf "xlm-ns-contracts-${VERSION}.tar.gz" release-contracts/
 
       - name: Upload contract artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: contracts
           path: xlm-ns-contracts-${{ needs.validate.outputs.version }}.tar.gz
