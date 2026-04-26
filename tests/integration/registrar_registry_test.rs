@@ -150,4 +150,32 @@ mod registrar_registry_integration {
         assert_eq!(entry.owner, owner);
         assert_eq!(entry.expires_at, quote.expiry_unix);
     }
+
+    /// If the registry rejects the registration (e.g., name is already taken),
+    /// the registrar's cross-contract call fails, preventing partial state divergence.
+    #[test]
+    fn registration_fails_if_name_already_taken() {
+        let (env, registrar, _registry) = setup_env();
+        let owner1 = Address::generate(&env);
+        let owner2 = Address::generate(&env);
+        let label = String::from_str(&env, "conflict");
+        let name = String::from_str(&env, "conflict.xlm");
+        let time = TimeHelper::new(1_000_000);
+
+        let quote = registrar.quote_registration(&label, &1, &time.now);
+
+        // First registration succeeds
+        registrar.register(&label, &owner1, &1, &quote.fee_stroops, &time.now);
+
+        // Second registration must fail
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            registrar.register(&label, &owner2, &1, &quote.fee_stroops, &time.now);
+        }));
+
+        assert!(result.is_err(), "second registration should have panicked and reverted");
+
+        // The original owner should still remain the owner in the registrar record
+        let reg_record = registrar.registration(&name).unwrap();
+        assert_eq!(reg_record.owner, owner1);
+    }
 }
