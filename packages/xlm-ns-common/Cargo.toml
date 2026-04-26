@@ -5,4 +5,4 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-soroban-sdk = "=26.0.0-rc.1"
+soroban-sdk = "=23.5.3"
