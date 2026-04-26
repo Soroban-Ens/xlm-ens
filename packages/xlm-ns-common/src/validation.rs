@@ -76,6 +76,7 @@ mod tests {
     };
     use crate::errors::CommonError;
     use crate::types::Tld;
+    use proptest::prelude::*;
 
     #[test]
     fn rejects_short_labels() {
@@ -140,5 +141,56 @@ mod tests {
     fn validates_chain_name_presence() {
         assert_eq!(validate_chain_name("stellar"), Ok(()));
         assert_eq!(validate_chain_name("   "), Err(CommonError::EmptyChainName));
+    }
+
+    // ==========================================
+    // Property-based Tests (Fuzzing)
+    //
+    // To run these property tests, use the standard cargo test command:
+    //   cargo test -p xlm-ns-common
+    //
+    // Proptest will automatically generate thousands of random string
+    // inputs to verify that the validation functions never panic and
+    // correctly accept or reject edge cases.
+    // ==========================================
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1000))]
+
+        #[test]
+        fn doesnt_crash_on_random_input(s in "\\PC*") {
+            let _ = validate_label(&s);
+            let _ = parse_fqdn(&s);
+        }
+
+        #[test]
+        fn accepts_strictly_valid_labels(s in "[a-z0-9]([a-z0-9-]*[a-z0-9])?") {
+            if s.len() >= MIN_NAME_LENGTH && s.len() <= MAX_NAME_LENGTH {
+                prop_assert_eq!(validate_label(&s), Ok(()));
+            } else if s.len() < MIN_NAME_LENGTH {
+                prop_assert_eq!(validate_label(&s), Err(CommonError::NameTooShort));
+            } else {
+                prop_assert_eq!(validate_label(&s), Err(CommonError::NameTooLong));
+            }
+        }
+
+        #[test]
+        fn rejects_labels_with_uppercase(s in "[a-zA-Z0-9-]*[A-Z][a-zA-Z0-9-]*") {
+            if s.len() >= MIN_NAME_LENGTH && s.len() <= MAX_NAME_LENGTH {
+                prop_assert_eq!(validate_label(&s), Err(CommonError::InvalidCharacters));
+            }
+        }
+
+        #[test]
+        fn rejects_fqdn_without_tld(label in "[a-z0-9]([a-z0-9-]*[a-z0-9])?") {
+            prop_assert_eq!(parse_fqdn(&label), Err(CommonError::MissingTld));
+        }
+
+        #[test]
+        fn parses_valid_fqdn(label in "[a-z0-9]([a-z0-9-]*[a-z0-9])?") {
+            if label.len() >= MIN_NAME_LENGTH && label.len() <= MAX_NAME_LENGTH {
+                let fqdn = format!("{}.xlm", label);
+                prop_assert_eq!(parse_fqdn(&fqdn), Ok((label.clone(), Tld::Xlm)));
+            }
+        }
     }
 }
