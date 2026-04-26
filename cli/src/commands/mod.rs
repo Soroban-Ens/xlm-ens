@@ -3,6 +3,7 @@ pub mod bridge;
 pub mod completions;
 pub mod nft;
 pub mod portfolio;
+pub mod quote;
 pub mod register;
 pub mod renew;
 pub mod resolve;

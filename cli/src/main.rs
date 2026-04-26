@@ -143,6 +143,25 @@ enum Commands {
         /// Owner address to inspect
         owner: String,
     },
+    /// Fetch a registration price quote without submitting a transaction (read-only).
+    ///
+    /// Use this to inspect the full fee breakdown and lifecycle timestamps before
+    /// deciding whether to register a name.
+    Quote {
+        /// Name label to quote (without the .xlm suffix)
+        name: String,
+        /// Number of years to quote for
+        #[arg(default_value_t = 1)]
+        years: u32,
+    },
+    /// Check whether a name is available for registration (read-only).
+    ///
+    /// Outputs the availability status: available, active, grace-period, or claimable.
+    /// No transaction is submitted.
+    Availability {
+        /// Name to check (e.g. `alice.xlm` or just `alice`)
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -378,6 +397,12 @@ async fn run() -> anyhow::Result<()> {
         Commands::Portfolio { owner } => {
             commands::portfolio::run_portfolio(config, cli.output, &owner).await
         }
+        Commands::Quote { name, years } => {
+            commands::quote::run_quote(config, cli.output, &name, years);
+        }
+        Commands::Availability { name } => {
+            commands::quote::run_availability(config, cli.output, &name);
+        }
         Commands::Completions { .. } => unreachable!("handled above"),
     }
 }
@@ -445,6 +470,17 @@ fn validate_contract_policy(
             "portfolio",
             &[ContractKind::Registry, ContractKind::Resolver],
             &[ContractKind::Registry],
+        ),
+        // Quote and Availability are read-only; registrar is needed for pricing.
+        Commands::Quote { .. } => (
+            "quote",
+            &[ContractKind::Registrar],
+            &[ContractKind::Registrar],
+        ),
+        Commands::Availability { .. } => (
+            "availability",
+            &[ContractKind::Registry],
+            &[],
         ),
     };
 

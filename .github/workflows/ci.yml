@@ -52,6 +52,7 @@ jobs:
       - name: Install Soroban CLI
         run: cargo install --locked soroban-cli
       - name: Build contracts
+        # Fails clearly if any contract stops building for release output.
         run: |
           cargo build --release --target wasm32-unknown-unknown \
             -p xlm-ns-registry \
@@ -61,10 +62,22 @@ jobs:
             -p xlm-ns-subdomain \
             -p xlm-ns-nft \
             -p xlm-ns-bridge
+      - name: Verify WASM outputs exist
+        run: |
+          for crate in xlm_ns_registry xlm_ns_registrar xlm_ns_resolver xlm_ns_auction xlm_ns_subdomain xlm_ns_nft xlm_ns_bridge; do
+            wasm="target/wasm32-unknown-unknown/release/${crate}.wasm"
+            if [ ! -f "$wasm" ]; then
+              echo "ERROR: expected WASM output not found: $wasm" >&2
+              exit 1
+            fi
+            echo "OK: $wasm ($(wc -c < "$wasm") bytes)"
+          done
       - name: Collect artifacts
         run: |
           mkdir -p artifacts/wasm artifacts/specs
           cp target/wasm32-unknown-unknown/release/xlm_ns_*.wasm artifacts/wasm/
+
+          # Generate contract specs for each WASM
           for wasm in artifacts/wasm/*.wasm; do
             base="$(basename "${wasm%.wasm}")"
             soroban contract spec --wasm "$wasm" --output json > "artifacts/specs/${base}.json"
@@ -74,5 +87,8 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: soroban-contract-artifacts
+          name: soroban-contract-artifacts-${{ github.sha }}
           path: artifacts
+          # Retain artifacts for 90 days so deployment and verification workflows
+          # can consume reproducible WASM outputs long after the build completes.
+          retention-days: 90
