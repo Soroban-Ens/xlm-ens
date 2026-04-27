@@ -106,6 +106,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn registry_metadata_returns_typed_record() {
+        let metadata = client().get_registry_metadata("alice.xlm").await.unwrap();
+        assert_eq!(metadata.owner, "GDRA...OWNER");
+        assert!(metadata.expires_at > 0);
+        assert!(metadata.resolver.is_some());
+    }
+
+    #[tokio::test]
+    async fn owner_portfolio_returns_vec() {
+        let portfolio = client()
+            .get_owner_portfolio("GDRA...OWNER")
+            .await
+            .unwrap();
+        assert!(!portfolio.is_empty());
+        assert_eq!(portfolio[0].owner, "GDRA...OWNER");
+    }
+
+    #[tokio::test]
+    async fn auction_state_returns_typed_data() {
+        let state = client().get_auction_state("active.xlm").await.unwrap();
+        assert_eq!(state.highest_bid, 150);
+        assert!(state.end_time > 0);
+    }
+
+    #[tokio::test]
+    async fn auction_state_handles_not_found() {
+        use crate::errors::SdkError;
+        use crate::errors::ContractErrorCode;
+        let result = client().get_auction_state("missing.xlm").await;
+        match result {
+            Err(SdkError::ContractError(ContractErrorCode::NameNotFound)) => {},
+            _ => panic!("Expected NameNotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn resolver_primary_name_returns_option() {
+        let name = client().get_primary_name("GDRA...ADDR").await.unwrap();
+        assert_eq!(name, Some("primary.xlm".to_string()));
+    }
+
+    #[tokio::test]
+    async fn resolver_text_records_returns_hashmap() {
+        let records = client().get_text_records("alice.xlm").await.unwrap();
+        assert!(records.contains_key("url"));
+        assert_eq!(records.get("url").unwrap(), "https://alice.xlm");
+    }
+
+    #[tokio::test]
     async fn builder_default_config_is_applied() {
         let client = client();
         assert_eq!(client.config.timeout, crate::config::DEFAULT_TIMEOUT);
@@ -130,5 +179,14 @@ mod tests {
         assert_eq!(client.config.timeout, Duration::from_secs(2));
         assert_eq!(client.config.retry.max_retries, 0);
         assert_eq!(client.config.user_agent, "integration-test/1.0");
+    }
+
+    #[test]
+    fn error_decoding_works() {
+        use crate::errors::decode_error;
+        use crate::errors::ContractErrorCode;
+        assert_eq!(decode_error(1), ContractErrorCode::NameNotFound);
+        assert_eq!(decode_error(2), ContractErrorCode::NotOwner);
+        assert_eq!(decode_error(99), ContractErrorCode::Other);
     }
 }

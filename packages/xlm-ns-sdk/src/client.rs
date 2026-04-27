@@ -1,13 +1,15 @@
 use crate::config::ClientConfig;
-use crate::errors::SdkError;
+use crate::errors::{ContractErrorCode, SdkError};
 use crate::types::{
-    AddControllerRequest, AuctionCreateRequest, AuctionInfo, AuctionStatus, BidRequest,
-    BridgeRoute, BuildMessageRequest, CreateSubdomainRequest, FeeBreakdown, NftRecord,
-    RegisterChainRequest, RegisterParentRequest, RegistrationQuote, RegistrationReceipt,
+    AddControllerRequest, AuctionCreateRequest, AuctionInfo, AuctionState, AuctionStatus,
+    BidRequest, BridgeRoute, BuildMessageRequest, CreateSubdomainRequest, FeeBreakdown, NameRecord,
+    NftRecord, RegisterChainRequest, RegisterParentRequest, RegistrationQuote, RegistrationReceipt,
     RegistrationRequest, RegistryEntry, RenewalReceipt, RenewalRequest, ResolutionRecord,
-    ResolutionResult, ReverseResolution, SubmissionStatus, TextRecord, TextRecordUpdate,
-    TransactionSubmission, TransferRequest, TransferSubdomainRequest, DEFAULT_FEE_CURRENCY,
+    ResolutionResult, ReverseResolution, Subdomain, SubmissionStatus, TextRecord,
+    TextRecordUpdate, TransactionSubmission, TransferRequest, TransferSubdomainRequest,
+    DEFAULT_FEE_CURRENCY,
 };
+use std::collections::HashMap;
 use stellar_rpc_client::Client;
 
 const MOCK_REFERENCE_TIMESTAMP: u64 = 1_682_200_000;
@@ -115,6 +117,42 @@ impl XlmNsClient {
         Ok(result)
     }
 
+    pub async fn get_registry_metadata(&self, name: &str) -> Result<NameRecord, SdkError> {
+        let rpc =
+            Client::new(&self.rpc_url).map_err(|e| SdkError::InvalidRequest(e.to_string()))?;
+        let registry_id = self
+            .registry_contract_id
+            .as_ref()
+            .ok_or(SdkError::InvalidRequest(
+                "registry contract ID not configured".into(),
+            ))?;
+
+        let entry = self.query_registry(&rpc, registry_id, name).await?;
+
+        Ok(NameRecord {
+            owner: entry.owner,
+            registered_at: entry.registered_at,
+            expires_at: entry.expires_at,
+            grace_period_ends_at: entry.grace_period_ends_at,
+            resolver: entry.resolver,
+        })
+    }
+
+    pub async fn get_owner_portfolio(&self, owner: &str) -> Result<Vec<NameRecord>, SdkError> {
+        if owner.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("owner must not be empty".into()));
+        }
+
+        // Mocking portfolio retrieval
+        Ok(vec![NameRecord {
+            owner: owner.to_string(),
+            registered_at: MOCK_REFERENCE_TIMESTAMP - 86400,
+            expires_at: MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR,
+            grace_period_ends_at: MOCK_REFERENCE_TIMESTAMP + SECONDS_PER_YEAR + 86400,
+            resolver: Some("CDAD...RESOLVER".to_string()),
+        }])
+    }
+
     async fn query_registry(
         &self,
         client: &Client,
@@ -208,6 +246,27 @@ impl XlmNsClient {
             primary_name: Some("primary.xlm".to_string()),
             resolver: self.resolver_contract_id.clone(),
         })
+    }
+
+    pub async fn reverse_lookup(&self, address: &str) -> Result<Option<String>, SdkError> {
+        let res = self.reverse_resolve(address).await?;
+        Ok(res.primary_name)
+    }
+
+    pub async fn get_primary_name(&self, address: &str) -> Result<Option<String>, SdkError> {
+        self.reverse_lookup(address).await
+    }
+
+    pub async fn get_text_records(&self, name: &str) -> Result<HashMap<String, String>, SdkError> {
+        if name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
+        }
+
+        let mut records = HashMap::new();
+        records.insert("url".to_string(), "https://alice.xlm".to_string());
+        records.insert("twitter".to_string(), "@alice".to_string());
+
+        Ok(records)
     }
 
     pub async fn get_text_record(&self, name: &str, key: &str) -> Result<TextRecord, SdkError> {
@@ -436,6 +495,23 @@ impl XlmNsClient {
         Ok(())
     }
 
+    pub async fn get_subdomains(&self, parent: &str) -> Result<Vec<Subdomain>, SdkError> {
+        if parent.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("parent must not be empty".into()));
+        }
+
+        Ok(vec![
+            Subdomain {
+                label: "blog".to_string(),
+                owner: "GDRA...OWNER".to_string(),
+            },
+            Subdomain {
+                label: "shop".to_string(),
+                owner: "GDRA...OWNER".to_string(),
+            },
+        ])
+    }
+
     pub async fn register_chain(&self, request: RegisterChainRequest) -> Result<(), SdkError> {
         if request.chain.trim().is_empty() {
             return Err(SdkError::InvalidRequest("chain must not be empty".into()));
@@ -475,6 +551,25 @@ impl XlmNsClient {
         };
 
         Ok(route)
+    }
+
+    pub async fn get_bridge_routes(&self, name: &str) -> Result<Vec<BridgeRoute>, SdkError> {
+        if name.trim().is_empty() {
+            return Err(SdkError::InvalidRequest("name must not be empty".into()));
+        }
+
+        Ok(vec![
+            BridgeRoute {
+                destination_chain: "ethereum".to_string(),
+                destination_resolver: "0xethResolver".to_string(),
+                gateway: "0xethGateway".to_string(),
+            },
+            BridgeRoute {
+                destination_chain: "base".to_string(),
+                destination_resolver: "0xbaseResolver".to_string(),
+                gateway: "0xbaseGateway".to_string(),
+            },
+        ])
     }
 
     pub async fn build_message(&self, request: BuildMessageRequest) -> Result<String, SdkError> {
@@ -546,6 +641,18 @@ impl XlmNsClient {
         } else {
             Ok(None)
         }
+    }
+
+    pub async fn get_auction_state(&self, name: &str) -> Result<AuctionState, SdkError> {
+        let info = self
+            .get_auction(name)
+            .await?
+            .ok_or_else(|| SdkError::ContractError(ContractErrorCode::NameNotFound))?;
+
+        Ok(AuctionState {
+            highest_bid: info.highest_bid as i128,
+            end_time: info.ends_at,
+        })
     }
 
     pub async fn create_auction(
