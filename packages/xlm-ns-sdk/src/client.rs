@@ -2,12 +2,11 @@ use crate::config::ClientConfig;
 use crate::errors::{ContractErrorCode, SdkError};
 use crate::types::{
     AddControllerRequest, AuctionCreateRequest, AuctionInfo, AuctionState, AuctionStatus,
-    BidRequest, BridgeRoute, BuildMessageRequest, CreateSubdomainRequest, FeeBreakdown, NameRecord,
-    NftRecord, RegisterChainRequest, RegisterParentRequest, RegistrationQuote, RegistrationReceipt,
-    RegistrationRequest, RegistryEntry, RenewalReceipt, RenewalRequest, RegisterResult, RenewResult,
-    ResolutionRecord, ResolutionResult, ReverseResolution, Subdomain, SubmissionStatus, TextRecord,
-    TextRecordUpdate, TransactionSubmission, TransferRequest, TransferSubdomainRequest,
-    DEFAULT_FEE_CURRENCY,
+    BidRequest, BridgeRoute, BuildMessageRequest, CreateSubdomainRequest, FeeBreakdown,KeypairSigner, NameRecord, NftRecord, RegisterChainRequest, RegisterParentRequest,
+    RegistrationQuote, RegistrationReceipt, RegistrationRequest, RegistryEntry, RenewalReceipt,
+    RenewalRequest, ResolutionRecord, ResolutionResult, ReverseResolution, Signer, Subdomain,
+    SubmissionStatus, TextRecord, TextRecordUpdate, TransactionSubmission, TransferRequest,
+    TransferSubdomainRequest, 
 };
 use std::collections::HashMap;
 use stellar_rpc_client::Client;
@@ -387,7 +386,7 @@ impl XlmNsClient {
             registrar_id,
             request.label,
             std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+                .duration_since(std::timze::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos()
         );

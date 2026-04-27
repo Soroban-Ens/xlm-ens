@@ -32,6 +32,18 @@ pub enum SdkError {
         operation: &'static str,
         ledger_submitted: u32,
     },
+    SigningFailed {
+        operation: &'static str,
+        source: SigningError,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SigningError {
+    Rejected { reason: String },
+    InvalidKey { reason: String },
+    ExternalFailure { reason: String },
+    MalformedEnvelope { reason: String },
 }
 
 impl fmt::Display for SdkError {
@@ -40,44 +52,12 @@ impl fmt::Display for SdkError {
             Self::InvalidRequest(message) => write!(f, "invalid request: {message}"),
             Self::Transport(message) => write!(f, "transport error: {message}"),
             Self::ContractError(code) => write!(f, "contract error: {code:?}"),
-            Self::ContractInvocationFailed {
-                operation,
-                reason,
-                tx_hash,
-            } => {
-                write!(f, "contract invocation failed for {operation}: {reason}")?;
-                if let Some(hash) = tx_hash {
-                    write!(f, " (tx: {hash})")?;
-                }
-                Ok(())
-            }
-            Self::SimulationFailed { operation, reason } => {
-                write!(f, "simulation failed for {operation}: {reason}")
-            }
-            Self::InsufficientFee {
-                operation,
-                required,
-                available,
-            } => {
-                write!(
-                    f,
-                    "insufficient fee for {operation}: required {required}, available {available}"
-                )
-            }
-            Self::TransactionTimeout {
-                operation,
-                ledger_submitted,
-            } => {
-                write!(
-                    f,
-                    "transaction timeout for {operation} (submitted at ledger {ledger_submitted})"
-                )
-            }
         }
     }
 }
 
 impl std::error::Error for SdkError {}
+impl std::error::Error for SigningError {}
 
 pub fn decode_error(code: u32) -> ContractErrorCode {
     match code {
@@ -88,4 +68,3 @@ pub fn decode_error(code: u32) -> ContractErrorCode {
         _ => ContractErrorCode::Other,
     }
 }
-

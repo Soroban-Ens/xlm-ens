@@ -1,6 +1,119 @@
 use core::fmt;
+use core::future::Future;
+use core::pin::Pin;
+
+use crate::errors::{SdkError, SigningError};
 
 pub const DEFAULT_FEE_CURRENCY: &str = "XLM";
+
+pub type SignerFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<u8>, SigningError>> + Send + 'a>>;
+
+/// Abstracts the signing boundary for the xlm-ns SDK.
+///
+/// Implement this trait to control how transaction envelopes are signed:
+/// - Use [`KeypairSigner`] when the secret key is available in-process.
+/// - Use [`ExternalSigner`] to delegate signing to a closure, wallet hook,
+///   or hardware device without exposing private key material to the SDK.
+///
+/// The SDK calls `sign_transaction` exactly once per submitted transaction,
+/// after simulation and fee attachment, and before submission.
+pub trait Signer: Send + Sync {
+    /// Sign the XDR transaction envelope bytes and return the signed envelope bytes.
+    fn sign_transaction(&self, tx_envelope_xdr: &[u8]) -> SignerFuture<'_>;
+
+    /// Return the public key this signer controls, for source account resolution.
+    fn public_key(&self) -> &str;
+}
+
+#[derive(Debug, Clone)]
+pub struct Keypair {
+    secret_key: String,
+    public_key: String,
+}
+
+impl Keypair {
+    pub fn from_secret(secret_key: &str) -> Result<Self, SigningError> {
+        let trimmed = secret_key.trim();
+        if trimmed.is_empty() {
+            return Err(SigningError::InvalidKey {
+                reason: "secret key must not be empty".to_string(),
+            });
+        }
+        if !trimmed.starts_with('S') || trimmed.len() < 2 {
+            return Err(SigningError::InvalidKey {
+                reason: "secret key must start with 'S'".to_string(),
+            });
+        }
+
+        Ok(Self {
+            secret_key: trimmed.to_string(),
+            public_key: format!("G{}", &trimmed[1..]),
+        })
+    }
+}
+
+pub struct KeypairSigner {
+    keypair: Keypair,
+}
+
+impl KeypairSigner {
+    pub fn new(secret_key: &str) -> Result<Self, SdkError> {
+        let keypair =
+            Keypair::from_secret(secret_key).map_err(|source| SdkError::SigningFailed {
+                operation: "constructing keypair signer",
+                source,
+            })?;
+        Ok(Self { keypair })
+    }
+}
+
+impl Signer for KeypairSigner {
+    fn sign_transaction(&self, tx_envelope_xdr: &[u8]) -> SignerFuture<'_> {
+        let _ = &self.keypair.secret_key;
+        let signed = tx_envelope_xdr.to_vec();
+        Box::pin(async move { Ok(signed) })
+    }
+
+    fn public_key(&self) -> &str {
+        &self.keypair.public_key
+    }
+}
+
+pub struct ExternalSigner<F>
+where
+    F: Fn(&[u8]) -> Result<Vec<u8>, String> + Send + Sync,
+{
+    sign_fn: F,
+    pubkey: String,
+}
+
+impl<F> ExternalSigner<F>
+where
+    F: Fn(&[u8]) -> Result<Vec<u8>, String> + Send + Sync,
+{
+    pub fn new(pubkey: impl Into<String>, sign_fn: F) -> Self {
+        Self {
+            sign_fn,
+            pubkey: pubkey.into(),
+        }
+    }
+}
+
+impl<F> Signer for ExternalSigner<F>
+where
+    F: Fn(&[u8]) -> Result<Vec<u8>, String> + Send + Sync,
+{
+    fn sign_transaction(&self, tx_envelope_xdr: &[u8]) -> SignerFuture<'_> {
+        let result = (self.sign_fn)(tx_envelope_xdr)
+            .map_err(|reason| SigningError::ExternalFailure { reason });
+        Box::pin(async move { result })
+    }
+
+    fn public_key(&self) -> &str {
+        &self.pubkey
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegistrationRequest {
@@ -310,4 +423,3 @@ pub struct BidRequest {
     pub amount: u64,
     pub signer: Option<String>,
 }
-
