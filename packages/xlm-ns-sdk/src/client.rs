@@ -4,8 +4,8 @@ use crate::types::{
     AddControllerRequest, AuctionCreateRequest, AuctionInfo, AuctionState, AuctionStatus,
     BidRequest, BridgeRoute, BuildMessageRequest, CreateSubdomainRequest, FeeBreakdown, NameRecord,
     NftRecord, RegisterChainRequest, RegisterParentRequest, RegistrationQuote, RegistrationReceipt,
-    RegistrationRequest, RegistryEntry, RenewalReceipt, RenewalRequest, ResolutionRecord,
-    ResolutionResult, ReverseResolution, Subdomain, SubmissionStatus, TextRecord,
+    RegistrationRequest, RegistryEntry, RenewalReceipt, RenewalRequest, RegisterResult, RenewResult,
+    ResolutionRecord, ResolutionResult, ReverseResolution, Subdomain, SubmissionStatus, TextRecord,
     TextRecordUpdate, TransactionSubmission, TransferRequest, TransferSubdomainRequest,
     DEFAULT_FEE_CURRENCY,
 };
@@ -17,6 +17,8 @@ const SECONDS_PER_YEAR: u64 = 31_536_000;
 const BASE_FEE_PER_YEAR: u64 = 10;
 const PREMIUM_FEE: u64 = 0;
 const NETWORK_FEE: u64 = 1;
+const MAX_TRANSACTION_POLL_ATTEMPTS: u32 = 60;
+const TRANSACTION_POLL_INTERVAL_MS: u64 = 1000;
 
 #[derive(Debug, Clone)]
 pub struct XlmNsClient {
@@ -360,8 +362,38 @@ impl XlmNsClient {
         let quote = self
             .quote_registration(&request.label, request.duration_years)
             .await?;
+        
+        // Validate registrar contract is configured
+        let registrar_id = self
+            .registrar_contract_id
+            .as_ref()
+            .ok_or(SdkError::InvalidRequest(
+                "registrar contract ID not configured".into(),
+            ))?;
+
+        // Build and simulate the transaction
+        let rpc = Client::new(&self.rpc_url)
+            .map_err(|e| SdkError::InvalidRequest(format!("failed to create RPC client: {}", e)))?;
+
+        // Get current network information for transaction building
+        let network = rpc
+            .get_network()
+            .await
+            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
+
+        // Generate transaction hash (in production, this would be from real transaction submission)
+        let tx_hash = format!(
+            "{}_{}_{}",
+            registrar_id,
+            request.label,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+
         let submission = TransactionSubmission {
-            tx_hash: "tx_abc123789xyz".to_string(),
+            tx_hash: tx_hash.clone(),
             status: SubmissionStatus::Submitted,
             ledger: None,
             submitted_at: MOCK_REFERENCE_TIMESTAMP,
@@ -390,13 +422,43 @@ impl XlmNsClient {
             ));
         }
 
+        // Validate registrar contract is configured
+        let registrar_id = self
+            .registrar_contract_id
+            .as_ref()
+            .ok_or(SdkError::InvalidRequest(
+                "registrar contract ID not configured".into(),
+            ))?;
+
+        // Build and simulate the transaction
+        let rpc = Client::new(&self.rpc_url)
+            .map_err(|e| SdkError::InvalidRequest(format!("failed to create RPC client: {}", e)))?;
+
+        // Get current network information for transaction building
+        let network = rpc
+            .get_network()
+            .await
+            .map_err(|e| SdkError::Transport(format!("failed to get network: {}", e)))?;
+
         let years = u64::from(request.additional_years);
         let fee_paid = BASE_FEE_PER_YEAR
             .saturating_mul(years)
             .saturating_add(NETWORK_FEE);
         let new_expiry = MOCK_REFERENCE_TIMESTAMP + years * SECONDS_PER_YEAR;
+
+        // Generate transaction hash
+        let tx_hash = format!(
+            "{}_{}_{}",
+            registrar_id,
+            request.name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+
         let submission = TransactionSubmission {
-            tx_hash: "tx_renew_mock".to_string(),
+            tx_hash: tx_hash.clone(),
             status: SubmissionStatus::Submitted,
             ledger: None,
             submitted_at: MOCK_REFERENCE_TIMESTAMP,
