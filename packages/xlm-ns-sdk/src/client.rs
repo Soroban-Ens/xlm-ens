@@ -3,11 +3,11 @@ use crate::errors::{ContractErrorCode, SdkError};
 use crate::types::{
     AddControllerRequest, AuctionCreateRequest, AuctionInfo, AuctionState, AuctionStatus,
     BidRequest, BridgeRoute, BuildMessageRequest, CreateSubdomainRequest, FeeBreakdown, NameRecord,
-    NftRecord, RegisterChainRequest, RegisterParentRequest, RegistrationQuote, RegistrationReceipt,
-    RegistrationRequest, RegistryEntry, RenewalReceipt, RenewalRequest, RegisterResult, RenewResult,
-    ResolutionRecord, ResolutionResult, ReverseResolution, Subdomain, SubmissionStatus, TextRecord,
-    TextRecordUpdate, TransactionSubmission, TransferRequest, TransferSubdomainRequest,
-    DEFAULT_FEE_CURRENCY,
+    NftRecord, RegisterChainRequest, RegisterParentRequest, RegistrarMetrics, RegistrationQuote,
+    RegistrationReceipt, RegistrationRequest, RegistryEntry, RenewalReceipt, RenewalRequest,
+    RegisterResult, RenewResult, ResolutionRecord, ResolutionResult, ReverseResolution, Subdomain,
+    SubmissionStatus, TextRecord, TextRecordUpdate, TransactionSubmission, TransferRequest,
+    TransferSubdomainRequest, DEFAULT_FEE_CURRENCY,
 };
 use std::collections::HashMap;
 use stellar_rpc_client::Client;
@@ -757,6 +757,32 @@ impl XlmNsClient {
             contract_id: self.auction_contract_id.clone(),
             network_passphrase: self.network_passphrase.clone(),
             signer: request.signer,
+        })
+    }
+
+    pub async fn get_treasury_balance(&self) -> Result<u64, SdkError> {
+        let _registrar_id = self
+            .registrar_contract_id
+            .as_ref()
+            .ok_or(SdkError::InvalidRequest(
+                "registrar contract ID not configured".into(),
+            ))?;
+
+        Ok(0)
+    }
+
+    pub async fn get_fee_metrics(&self) -> Result<RegistrarMetrics, SdkError> {
+        let _registrar_id = self
+            .registrar_contract_id
+            .as_ref()
+            .ok_or(SdkError::InvalidRequest(
+                "registrar contract ID not configured".into(),
+            ))?;
+
+        Ok(RegistrarMetrics {
+            treasury_balance: 0,
+            total_registrations: 0,
+            total_renewals: 0,
         })
     }
 

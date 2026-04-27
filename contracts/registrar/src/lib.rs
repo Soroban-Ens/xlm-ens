@@ -17,10 +17,27 @@ pub const ADMIN_RECOVERY_SUPPORTED: bool = false;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
+pub struct PricingBreakdown {
+    pub annual_fee_stroops: u64,
+    pub duration_years: u64,
+    pub premium_stroops: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
 pub struct RegistrationQuote {
     pub fee_stroops: u64,
     pub expiry_unix: u64,
     pub grace_period_ends_at: u64,
+    pub pricing: PricingBreakdown,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct RegistrarMetrics {
+    pub treasury_balance: u64,
+    pub total_registrations: u64,
+    pub total_renewals: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,6 +59,8 @@ enum DataKey {
     Reserved(String),
     Treasury,
     Registry,
+    RegistrationCount,
+    RenewalCount,
 }
 
 #[contracterror]
@@ -149,6 +168,14 @@ impl RegistrarContract {
             &DataKey::Treasury,
             &treasury.saturating_add(payment_stroops),
         );
+        let reg_count = env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::RegistrationCount)
+            .unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RegistrationCount, &reg_count.saturating_add(1));
 
         let registry: Address = env
             .storage()
@@ -229,6 +256,14 @@ impl RegistrarContract {
             &DataKey::Treasury,
             &treasury.saturating_add(payment_stroops),
         );
+        let renew_count = env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::RenewalCount)
+            .unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RenewalCount, &renew_count.saturating_add(1));
 
         let registry: Address = env
             .storage()
@@ -275,6 +310,26 @@ impl RegistrarContract {
             .unwrap_or(0)
     }
 
+    pub fn fee_metrics(env: Env) -> RegistrarMetrics {
+        RegistrarMetrics {
+            treasury_balance: env
+                .storage()
+                .persistent()
+                .get(&DataKey::Treasury)
+                .unwrap_or(0),
+            total_registrations: env
+                .storage()
+                .persistent()
+                .get(&DataKey::RegistrationCount)
+                .unwrap_or(0),
+            total_renewals: env
+                .storage()
+                .persistent()
+                .get(&DataKey::RenewalCount)
+                .unwrap_or(0),
+        }
+    }
+
     pub fn supports_admin_recovery(_env: Env) -> bool {
         ADMIN_RECOVERY_SUPPORTED
     }
@@ -288,6 +343,11 @@ fn build_quote(label: &String, years: u64, now_unix: u64) -> RegistrationQuote {
         fee_stroops: annual_fee.saturating_mul(years),
         expiry_unix,
         grace_period_ends_at: expiry_unix.saturating_add(GRACE_PERIOD_SECONDS),
+        pricing: PricingBreakdown {
+            annual_fee_stroops: annual_fee,
+            duration_years: years,
+            premium_stroops: 0,
+        },
     }
 }
 
