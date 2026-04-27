@@ -228,6 +228,14 @@ pub struct NftRecord {
     pub metadata_uri: Option<String>,
 }
 
+/// Cumulative fee and operation metrics returned by the registrar's read APIs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegistrarMetrics {
+    pub treasury_balance: u64,
+    pub total_registrations: u64,
+    pub total_renewals: u64,
+}
+
 // Domain Models
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameRecord {

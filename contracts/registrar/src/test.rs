@@ -176,4 +176,65 @@ mod tests {
 
         assert!(!client.supports_admin_recovery());
     }
+
+    #[test]
+    fn quote_includes_pricing_breakdown() {
+        let env = Env::default();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+
+        // 5-char label → 250_000_000 stroops/year
+        let label = String::from_str(&env, "alice");
+        let quote = client.quote_registration(&label, &2, &100);
+        assert_eq!(quote.pricing.annual_fee_stroops, 250_000_000);
+        assert_eq!(quote.pricing.duration_years, 2);
+        assert_eq!(quote.pricing.premium_stroops, 0);
+        assert_eq!(quote.fee_stroops, 500_000_000);
+
+        // 3-char label → 1_000_000_000 stroops/year
+        let short_label = String::from_str(&env, "foo");
+        let short_quote = client.quote_registration(&short_label, &1, &100);
+        assert_eq!(short_quote.pricing.annual_fee_stroops, 1_000_000_000);
+        assert_eq!(short_quote.pricing.duration_years, 1);
+        assert_eq!(short_quote.fee_stroops, 1_000_000_000);
+
+        // 10-char label → 100_000_000 stroops/year
+        let long_label = String::from_str(&env, "longerlabel");
+        let long_quote = client.quote_registration(&long_label, &3, &100);
+        assert_eq!(long_quote.pricing.annual_fee_stroops, 100_000_000);
+        assert_eq!(long_quote.pricing.duration_years, 3);
+        assert_eq!(long_quote.fee_stroops, 300_000_000);
+    }
+
+    #[test]
+    fn fee_metrics_track_operations() {
+        let env = Env::default();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id);
+
+        let owner1 = Address::generate(&env);
+        let owner2 = Address::generate(&env);
+        let label1 = String::from_str(&env, "alpha");
+        let label2 = String::from_str(&env, "delta");
+        let name1 = String::from_str(&env, "alpha.xlm");
+
+        let quote1 = client.quote_registration(&label1, &1, &100);
+        let quote2 = client.quote_registration(&label2, &1, &100);
+
+        client.register(&label1, &owner1, &1, &quote1.fee_stroops, &100);
+        client.register(&label2, &owner2, &1, &quote2.fee_stroops, &100);
+        client.renew(&name1, &owner1, &1, &quote1.fee_stroops, &200);
+
+        let metrics = client.fee_metrics();
+        assert_eq!(metrics.total_registrations, 2);
+        assert_eq!(metrics.total_renewals, 1);
+        assert_eq!(
+            metrics.treasury_balance,
+            quote1.fee_stroops + quote2.fee_stroops + quote1.fee_stroops
+        );
+        assert_eq!(metrics.treasury_balance, client.treasury_balance());
+    }
 }
