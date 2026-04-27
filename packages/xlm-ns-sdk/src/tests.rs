@@ -189,4 +189,219 @@ mod tests {
         assert_eq!(decode_error(2), ContractErrorCode::NotOwner);
         assert_eq!(decode_error(99), ContractErrorCode::Other);
     }
-}
+
+    #[tokio::test]
+    async fn register_builds_real_submission() {
+        let receipt = client()
+            .register(RegistrationRequest {
+                label: "gamma".into(),
+                owner: "GDRA...OWNER".into(),
+                duration_years: 2,
+                signer: Some("registrar".into()),
+            })
+            .await
+            .unwrap();
+
+        // Verify receipt structure carries tx metadata
+        assert_eq!(receipt.name, "gamma.xlm");
+        assert_eq!(receipt.owner, "GDRA...OWNER");
+        assert_eq!(receipt.duration_years, 2);
+        assert_eq!(receipt.fee_paid, 21); // 2 years * 10 base + 1 network
+        assert_eq!(receipt.submission.status, SubmissionStatus::Submitted);
+        assert_eq!(receipt.submission.signer.as_deref(), Some("registrar"));
+        assert!(!receipt.submission.tx_hash.is_empty());
+        assert!(receipt.submission.contract_id.is_some());
+        assert!(receipt.expires_at > 1_682_200_000);
+    }
+
+    #[tokio::test]
+    async fn register_rejects_empty_label() {
+        let result = client()
+            .register(RegistrationRequest {
+                label: "".into(),
+                owner: "GDRA...OWNER".into(),
+                duration_years: 1,
+                signer: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SdkError::InvalidRequest(msg)) => {
+                assert!(msg.contains("label") || msg.contains("empty"));
+            }
+            _ => panic!("Expected InvalidRequest error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn register_rejects_empty_owner() {
+        let result = client()
+            .register(RegistrationRequest {
+                label: "test".into(),
+                owner: "".into(),
+                duration_years: 1,
+                signer: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SdkError::InvalidRequest(msg)) => {
+                assert!(msg.contains("owner") || msg.contains("empty"));
+            }
+            _ => panic!("Expected InvalidRequest error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn register_rejects_zero_duration() {
+        let result = client()
+            .register(RegistrationRequest {
+                label: "test".into(),
+                owner: "GDRA...OWNER".into(),
+                duration_years: 0,
+                signer: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SdkError::InvalidRequest(msg)) => {
+                assert!(msg.contains("duration") || msg.contains("greater"));
+            }
+            _ => panic!("Expected InvalidRequest error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn renew_builds_real_submission() {
+        let receipt = client()
+            .renew(RenewalRequest {
+                name: "delta.xlm".into(),
+                additional_years: 3,
+                signer: Some("owner".into()),
+            })
+            .await
+            .unwrap();
+
+        // Verify receipt structure carries tx metadata
+        assert_eq!(receipt.name, "delta.xlm");
+        assert_eq!(receipt.additional_years, 3);
+        assert_eq!(receipt.fee_paid, 31); // 3 years * 10 base + 1 network
+        assert_eq!(receipt.submission.status, SubmissionStatus::Submitted);
+        assert_eq!(receipt.submission.signer.as_deref(), Some("owner"));
+        assert!(!receipt.submission.tx_hash.is_empty());
+        assert!(receipt.submission.contract_id.is_some());
+        assert!(receipt.new_expiry > 1_682_200_000);
+    }
+
+    #[tokio::test]
+    async fn renew_rejects_empty_name() {
+        let result = client()
+            .renew(RenewalRequest {
+                name: "".into(),
+                additional_years: 1,
+                signer: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SdkError::InvalidRequest(msg)) => {
+                assert!(msg.contains("name") || msg.contains("empty"));
+            }
+            _ => panic!("Expected InvalidRequest error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn renew_rejects_zero_years() {
+        let result = client()
+            .renew(RenewalRequest {
+                name: "test.xlm".into(),
+                additional_years: 0,
+                signer: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SdkError::InvalidRequest(msg)) => {
+                assert!(msg.contains("additional_years") || msg.contains("greater"));
+            }
+            _ => panic!("Expected InvalidRequest error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn register_requires_registrar_contract() {
+        let no_registrar_client = XlmNsClient::builder("http://localhost")
+            .registry("CDAD...REGISTRY")
+            .build();
+
+        let result = no_registrar_client
+            .register(RegistrationRequest {
+                label: "test".into(),
+                owner: "GDRA...OWNER".into(),
+                duration_years: 1,
+                signer: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SdkError::InvalidRequest(msg)) => {
+                assert!(msg.contains("registrar"));
+            }
+            _ => panic!("Expected InvalidRequest error for missing registrar"),
+        }
+    }
+
+    #[tokio::test]
+    async fn renew_requires_registrar_contract() {
+        let no_registrar_client = XlmNsClient::builder("http://localhost")
+            .registry("CDAD...REGISTRY")
+            .build();
+
+        let result = no_registrar_client
+            .renew(RenewalRequest {
+                name: "test.xlm".into(),
+                additional_years: 1,
+                signer: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(SdkError::InvalidRequest(msg)) => {
+                assert!(msg.contains("registrar"));
+            }
+            _ => panic!("Expected InvalidRequest error for missing registrar"),
+        }
+    }
+
+    #[tokio::test]
+    async fn submission_includes_fee_breakdown() {
+        let quote = client()
+            .quote_registration("epsilon", 4)
+            .await
+            .unwrap();
+
+        assert_eq!(quote.fee_breakdown.base_fee, 40);
+        assert_eq!(quote.fee_breakdown.network_fee, 1);
+        assert_eq!(quote.total_fee, 41);
+
+        let receipt = client()
+            .register(RegistrationRequest {
+                label: "epsilon".into(),
+                owner: "GDRA...OWNER".into(),
+                duration_years: 4,
+                signer: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(receipt.fee_paid, 41);
+        assert_eq!(receipt.submission.network_passphrase, Some("Test SDF Network ; September 2015".into()));
+    }

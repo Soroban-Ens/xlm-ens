@@ -22,3 +22,4 @@ pub use blocking::XlmNsBlockingClient;
 pub use client::{XlmNsClient, XlmNsClientBuilder};
 pub use config::{ClientConfig, RetryConfig};
 pub use errors::SdkError;
+pub use types::{RegisterResult, RenewResult, RegistrationReceipt, RenewalReceipt};

@@ -92,12 +92,28 @@ pub struct RegistrationReceipt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegisterResult {
+    pub name: String,
+    pub owner: String,
+    pub tx_hash: String,
+    pub ledger_sequence: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenewalReceipt {
     pub name: String,
     pub additional_years: u32,
     pub new_expiry: u64,
     pub fee_paid: u64,
     pub submission: TransactionSubmission,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenewResult {
+    pub name: String,
+    pub new_expiry_ledger: u32,
+    pub tx_hash: String,
+    pub ledger_sequence: u32,
 }
 
 /// Retained for backwards compatibility with callers that only need
