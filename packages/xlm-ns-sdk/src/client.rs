@@ -387,7 +387,7 @@ impl XlmNsClient {
             registrar_id,
             request.label,
             std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+                .duration_since(std::timze::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos()
         );
