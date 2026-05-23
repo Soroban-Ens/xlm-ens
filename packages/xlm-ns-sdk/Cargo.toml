@@ -7,7 +7,7 @@ version.workspace = true
 [dependencies]
 xlm-ns-common = { path = "../xlm-ns-common" }
 stellar-rpc-client = "23.1.0"
-soroban-sdk = "23.1.0"
+soroban-sdk = "23.5.3"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
