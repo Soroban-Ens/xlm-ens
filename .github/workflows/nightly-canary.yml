@@ -17,7 +17,7 @@ jobs:
           - name: mainnet
             rpc_url: https://soroban-rpc.mainnet.stellar.org
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Canary (${{ matrix.name }})
         env:
           SOROBAN_RPC_URL: ${{ matrix.rpc_url }}

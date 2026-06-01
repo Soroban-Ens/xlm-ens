@@ -14,7 +14,7 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust
         run: rustup update stable && rustup component add rustfmt
       - name: Rust cache
@@ -26,7 +26,7 @@ jobs:
     name: Workspace Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust
         run: rustup update stable
       - name: Rust cache
@@ -42,7 +42,7 @@ jobs:
     name: Contract Artifacts (WASM + spec)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust
         run: rustup update stable && rustup target add wasm32-unknown-unknown
       - name: Rust cache
