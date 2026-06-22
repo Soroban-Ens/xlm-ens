@@ -974,6 +974,57 @@ impl XlmNsClient {
         }
     }
 
+    pub async fn list_auctions(&self) -> Result<Vec<AuctionInfo>, SdkError> {
+        // In a real implementation this would page through a contract index.
+        Ok(vec![
+            AuctionInfo {
+                name: "active.xlm".to_string(),
+                owner: "GDRA...OWNER".to_string(),
+                reserve_price: 100,
+                highest_bid: 150,
+                highest_bidder: Some("GDRA...BIDDER".to_string()),
+                ends_at: MOCK_REFERENCE_TIMESTAMP + 3600,
+                status: AuctionStatus::Active,
+            },
+            AuctionInfo {
+                name: "ended.xlm".to_string(),
+                owner: "GDRA...OWNER".to_string(),
+                reserve_price: 100,
+                highest_bid: 200,
+                highest_bidder: Some("GDRA...WINNER".to_string()),
+                ends_at: MOCK_REFERENCE_TIMESTAMP - 3600,
+                status: AuctionStatus::Ended,
+            },
+            AuctionInfo {
+                name: "upcoming.xlm".to_string(),
+                owner: "GDRA...OWNER".to_string(),
+                reserve_price: 50,
+                highest_bid: 0,
+                highest_bidder: None,
+                ends_at: MOCK_REFERENCE_TIMESTAMP + 86_400,
+                status: AuctionStatus::Active,
+            },
+        ])
+    }
+
+    pub async fn list_auctions_page(
+        &self,
+        cursor: Option<usize>,
+        limit: usize,
+    ) -> Result<(Vec<AuctionInfo>, Option<usize>), SdkError> {
+        if limit == 0 {
+            return Err(SdkError::InvalidRequest(
+                "page size must be greater than zero".into(),
+            ));
+        }
+        let all = self.list_auctions().await?;
+        let total = all.len();
+        let start = cursor.unwrap_or_default().min(total);
+        let end = start.saturating_add(limit).min(total);
+        let next = (end < total).then_some(end);
+        Ok((all[start..end].to_vec(), next))
+    }
+
     pub async fn simulate_and_submit(
         &self,
         contract_id: &Option<String>,

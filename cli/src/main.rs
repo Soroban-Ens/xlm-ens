@@ -197,6 +197,38 @@ enum AuctionCommands {
         #[arg(long)]
         signer: Option<String>,
     },
+    /// List active and upcoming auctions with optional filters
+    List {
+        /// Filter by name label length (number of characters before .xlm)
+        #[arg(long = "name-length")]
+        name_length: Option<usize>,
+        /// Minimum current bid (inclusive)
+        #[arg(long = "min-bid")]
+        min_bid: Option<u64>,
+        /// Maximum current bid (inclusive)
+        #[arg(long = "max-bid")]
+        max_bid: Option<u64>,
+        /// Only show auctions with at least this many seconds remaining
+        #[arg(long = "min-time-remaining")]
+        min_time_remaining: Option<u64>,
+        /// Page cursor (0-based)
+        #[arg(long)]
+        page: Option<usize>,
+        /// Page size for paginated results
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
+    /// Show detailed auction info including available bid info
+    Show {
+        /// Name to show
+        name: String,
+    },
+    /// List bids placed by the current signer/profile
+    MyBids {
+        /// Signer profile to use
+        #[arg(long)]
+        signer: Option<String>,
+    },
     /// Place a bid on an active auction
     Bid {
         /// Name under auction
@@ -454,6 +486,13 @@ async fn run() -> anyhow::Result<()> {
                 amount,
                 signer,
             } => commands::auction::run_bid(config, &name, amount, resolve_signer(signer)?).await,
+            AuctionCommands::List { name_length, min_bid, max_bid, min_time_remaining, page, limit } => {
+                commands::auction::run_list(config, cli.output, name_length, min_bid, max_bid, min_time_remaining, page, limit).await
+            }
+            AuctionCommands::Show { name } => commands::auction::run_show(config, cli.output, &name).await,
+            AuctionCommands::MyBids { signer } => {
+                commands::auction::run_my_bids(config, cli.output, resolve_signer(signer)?).await
+            }
             AuctionCommands::Inspect { name } => {
                 commands::auction::run_inspect(config, &name).await
             }
