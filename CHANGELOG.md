@@ -40,7 +40,20 @@ _(no unreleased changes)_
 
 ### Subdomain
 
-_(no unreleased changes)_
+#### Added
+
+- `SubdomainError::ParentInGracePeriod = 8` — returned when the parent name
+  exists but has expired into its grace period.
+- `SubdomainError::ParentClaimable = 9` — returned when the parent name's grace
+  period has passed and the name is claimable by a new owner.
+
+#### Changed
+
+- `create`, `transfer`, `delete`, and `revoke` now report the parent name's
+  actual lifecycle state instead of collapsing every non-`Active` state into
+  `ParentNotFound`. `ParentNotFound` is now returned only when the parent does
+  not exist. Subdomain records under a parent that has left the `Active` state
+  are still purged, so a re-registered parent starts with a clean namespace.
 
 ### NFT
 

@@ -59,6 +59,12 @@ pub enum SubdomainError {
     Unauthorized = 5,
     UpgradeFailed = 6,
     DepthLimitExceeded = 7,
+    /// The parent name exists but is currently in its grace period (expired,
+    /// but not yet claimable by a new owner).
+    ParentInGracePeriod = 8,
+    /// The parent name exists but has passed its grace period and is
+    /// claimable by anyone; it has no active owner.
+    ParentClaimable = 9,
 }
 
 pub const CONTRACT_VERSION: u32 = 1;
@@ -330,9 +336,7 @@ impl SubdomainContract {
     ) -> Result<(), SubdomainError> {
         caller.require_auth();
         let mut record = get_subdomain(&env, &fqdn)?;
-        if !ensure_parent_is_active(&env, &record.parent) {
-            return Err(SubdomainError::ParentNotFound);
-        }
+        check_parent_active(&env, &record.parent)?;
         if record.owner != caller {
             return Err(SubdomainError::Unauthorized);
         }
@@ -356,9 +360,7 @@ impl SubdomainContract {
     pub fn delete(env: Env, fqdn: String, caller: Address) -> Result<(), SubdomainError> {
         caller.require_auth();
         let record = get_subdomain(&env, &fqdn)?;
-        if !ensure_parent_is_active(&env, &record.parent) {
-            return Err(SubdomainError::ParentNotFound);
-        }
+        check_parent_active(&env, &record.parent)?;
         if record.owner != caller {
             let parent_record = get_parent(&env, &record.parent)?;
             if parent_record.owner != caller && !parent_record.controllers.contains(&caller) {
@@ -388,9 +390,7 @@ impl SubdomainContract {
     pub fn revoke(env: Env, fqdn: String, caller: Address) -> Result<(), SubdomainError> {
         caller.require_auth();
         let record = get_subdomain(&env, &fqdn)?;
-        if !ensure_parent_is_active(&env, &record.parent) {
-            return Err(SubdomainError::ParentNotFound);
-        }
+        check_parent_active(&env, &record.parent)?;
 
         let mut is_authorized = false;
         if record.owner == caller {
@@ -459,9 +459,7 @@ impl SubdomainContract {
 }
 
 fn get_parent(env: &Env, parent: &String) -> Result<ParentDomain, SubdomainError> {
-    if !ensure_parent_is_active(env, parent) {
-        return Err(SubdomainError::ParentNotFound);
-    }
+    check_parent_active(env, parent)?;
     env.storage()
         .persistent()
         .get(&DataKey::Parent(parent.clone()))
@@ -481,9 +479,14 @@ fn get_registry_address(env: &Env) -> Option<Address> {
         .get::<_, Address>(&DataKey::RegistryContract)
 }
 
-fn ensure_parent_is_active(env: &Env, parent: &String) -> bool {
+/// Checks the parent name's current lifecycle state against the registry
+/// (when one is configured) and returns a specific error describing why the
+/// parent cannot be used if it is not `Active`. Any subdomains recorded
+/// under a parent that is no longer active are purged so stale records are
+/// never surfaced once the parent has left the `Active` state.
+fn check_parent_active(env: &Env, parent: &String) -> Result<(), SubdomainError> {
     match get_registry_address(env) {
-        None => true,
+        None => Ok(()),
         Some(registry) => {
             let now_unix = env.ledger().timestamp();
             match env.try_invoke_contract::<NameState, Error>(
@@ -491,14 +494,26 @@ fn ensure_parent_is_active(env: &Env, parent: &String) -> bool {
                 &Symbol::new(env, "name_state"),
                 (parent.clone(), now_unix).into_val(env),
             ) {
-                Ok(Ok(NameState::Active)) => true,
+                Ok(Ok(NameState::Active)) => Ok(()),
+                Ok(Ok(NameState::GracePeriod)) => {
+                    purge_parent_namespace(env, parent);
+                    Err(SubdomainError::ParentInGracePeriod)
+                }
+                Ok(Ok(NameState::Claimable)) => {
+                    purge_parent_namespace(env, parent);
+                    Err(SubdomainError::ParentClaimable)
+                }
                 _ => {
                     purge_parent_namespace(env, parent);
-                    false
+                    Err(SubdomainError::ParentNotFound)
                 }
             }
         }
     }
+}
+
+fn ensure_parent_is_active(env: &Env, parent: &String) -> bool {
+    check_parent_active(env, parent).is_ok()
 }
 
 fn purge_parent_namespace(env: &Env, parent: &String) {
