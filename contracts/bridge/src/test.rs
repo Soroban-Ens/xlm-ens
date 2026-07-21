@@ -351,4 +351,111 @@ mod tests {
         let result = client.try_add_supported_chain(&chain_id, &resolver);
         assert!(matches!(result, Err(Ok(BridgeError::Validation))));
     }
+
+    #[test]
+    fn batch_build_messages_happy_path() {
+        let env = Env::default();
+        let (client, _) = setup_initialized_client(&env);
+
+        register_default_chains(&client, &env);
+        client.register_chain(&String::from_str(&env, "base"));
+        client.register_chain(&String::from_str(&env, "ethereum"));
+
+        let name = String::from_str(&env, "test.xlm");
+        let mut chains = soroban_sdk::Vec::new(&env);
+        chains.push_back(String::from_str(&env, "base"));
+        chains.push_back(String::from_str(&env, "ethereum"));
+
+        let results = client.batch_build_messages(&name, &chains);
+        assert_eq!(results.len(), 2);
+        
+        let msg0 = results.get(0).unwrap().unwrap();
+        let msg1 = results.get(1).unwrap().unwrap();
+
+        assert!(msg0.to_string().contains("test.xlm"));
+        assert!(msg0.to_string().contains("base"));
+        assert!(msg1.to_string().contains("test.xlm"));
+        assert!(msg1.to_string().contains("ethereum"));
+    }
+
+    #[test]
+    fn batch_build_reverse_messages_happy_path() {
+        let env = Env::default();
+        let (client, _) = setup_initialized_client(&env);
+
+        register_default_chains(&client, &env);
+        client.register_chain(&String::from_str(&env, "base"));
+        client.register_chain(&String::from_str(&env, "ethereum"));
+
+        let address = String::from_str(&env, "0xaddr");
+        let primary_name = String::from_str(&env, "test.xlm");
+        let mut chains = soroban_sdk::Vec::new(&env);
+        chains.push_back(String::from_str(&env, "base"));
+        chains.push_back(String::from_str(&env, "ethereum"));
+
+        let results = client.batch_build_reverse_messages(&address, &primary_name, &chains);
+        assert_eq!(results.len(), 2);
+
+        let msg0 = results.get(0).unwrap().unwrap();
+        let msg1 = results.get(1).unwrap().unwrap();
+
+        assert!(msg0.to_string().contains("test.xlm"));
+        assert!(msg0.to_string().contains("0xaddr"));
+        assert!(msg1.to_string().contains("test.xlm"));
+        assert!(msg1.to_string().contains("0xaddr"));
+    }
+
+    #[test]
+    fn batch_build_messages_partial_failure() {
+        let env = Env::default();
+        let (client, _) = setup_initialized_client(&env);
+
+        register_default_chains(&client, &env);
+        client.register_chain(&String::from_str(&env, "base"));
+
+        let name = String::from_str(&env, "test.xlm");
+        let mut chains = soroban_sdk::Vec::new(&env);
+        chains.push_back(String::from_str(&env, "base"));
+        chains.push_back(String::from_str(&env, "polygon")); // Unsupported
+
+        let results = client.batch_build_messages(&name, &chains);
+        assert_eq!(results.len(), 2);
+
+        assert!(results.get(0).unwrap().is_ok());
+        let err1 = results.get(1).unwrap().unwrap_err();
+        assert_eq!(err1, BridgeError::UnsupportedChain);
+    }
+
+    #[test]
+    #[should_panic(expected = "Batch size exceeds maximum limit")]
+    fn batch_build_messages_exceeds_limit() {
+        let env = Env::default();
+        let (client, _) = setup_initialized_client(&env);
+
+        let name = String::from_str(&env, "test.xlm");
+        let mut chains = soroban_sdk::Vec::new(&env);
+        for _ in 0..11 {
+            chains.push_back(String::from_str(&env, "base"));
+        }
+
+        client.batch_build_messages(&name, &chains);
+    }
+
+    #[test]
+    fn batch_build_messages_invalid_name() {
+        let env = Env::default();
+        let (client, _) = setup_initialized_client(&env);
+
+        register_default_chains(&client, &env);
+        client.register_chain(&String::from_str(&env, "base"));
+
+        let invalid_name = String::from_str(&env, "invalid");
+        let mut chains = soroban_sdk::Vec::new(&env);
+        chains.push_back(String::from_str(&env, "base"));
+
+        let results = client.batch_build_messages(&invalid_name, &chains);
+        assert_eq!(results.len(), 1);
+        let err = results.get(0).unwrap().unwrap_err();
+        assert_eq!(err, BridgeError::Validation);
+    }
 }
