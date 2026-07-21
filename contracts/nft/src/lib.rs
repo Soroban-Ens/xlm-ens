@@ -60,6 +60,9 @@ pub enum NftError {
 }
 
 pub const CONTRACT_VERSION: u32 = 1;
+// #146-#604: Centralized TTL extension policy
+const PERSISTENT_LEDGER_TTL: u32 = 6_312_000; // ~1 year
+const PERSISTENT_LEDGER_THRESHOLD: u32 = PERSISTENT_LEDGER_TTL / 2;
 
 #[contractevent]
 pub struct ContractUpgraded {
@@ -85,6 +88,8 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &CONTRACT_VERSION);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -118,6 +123,8 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &target_version);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("nft"), symbol_short!("upgraded")),
@@ -140,6 +147,7 @@ impl NftContract {
         }
         admin.require_auth();
         env.storage().instance().set(&DataKey::Registry, &registry);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -168,6 +176,7 @@ impl NftContract {
             expires_at,
         };
         env.storage().persistent().set(&key, &record);
+        extend_persistent_ttl(&env, &key);
         append_token_id(&env, &token_id);
         add_owner_token(&env, &owner, &token_id);
 
@@ -186,9 +195,11 @@ impl NftContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::NameData(token_id.clone()), &name_record);
+            extend_persistent_ttl(&env, &DataKey::NameData(token_id.clone()));
         }
 
         events::mint(&env, owner.clone(), owner, token_id);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -234,7 +245,9 @@ impl NftContract {
         };
         env.storage()
             .persistent()
-            .set(&DataKey::NameData(token_id), &name_record);
+            .set(&DataKey::NameData(token_id.clone()), &name_record);
+        extend_persistent_ttl(&env, &DataKey::NameData(token_id));
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -252,7 +265,9 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::Token(token_id.clone()), &record);
+        extend_persistent_ttl(&env, &DataKey::Token(token_id.clone()));
         events::approve(&env, caller, approved, token_id);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -265,7 +280,9 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::Token(token_id.clone()), &record);
+        extend_persistent_ttl(&env, &DataKey::Token(token_id.clone()));
         events::approve_clear(&env, caller, token_id);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -285,6 +302,7 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::Token(token_id.clone()), &record);
+        extend_persistent_ttl(&env, &DataKey::Token(token_id.clone()));
         reindex_owner_token(&env, &previous_owner, &record.owner, &token_id);
         events::transfer(&env, previous_owner, new_owner.clone(), token_id.clone());
 
@@ -298,6 +316,7 @@ impl NftContract {
             );
         }
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -317,6 +336,7 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::Token(token_id.clone()), &record);
+        extend_persistent_ttl(&env, &DataKey::Token(token_id.clone()));
         reindex_owner_token(&env, &owner, &record.owner, &token_id);
         events::transfer(&env, owner, recipient.clone(), token_id.clone());
 
@@ -330,6 +350,7 @@ impl NftContract {
             );
         }
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -388,8 +409,10 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::TokenIds, &all_tokens);
+        extend_persistent_ttl(&env, &DataKey::TokenIds);
 
         events::burn(&env, admin, token_id);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -406,6 +429,8 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::Token(token_id.clone()), &record);
+        extend_persistent_ttl(&env, &DataKey::Token(token_id.clone()));
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -423,10 +448,24 @@ impl NftContract {
         env.storage()
             .persistent()
             .set(&DataKey::Token(token_id.clone()), &record);
+        extend_persistent_ttl(&env, &DataKey::Token(token_id.clone()));
         reindex_owner_token(&env, &old_owner, &new_owner, &token_id);
         events::transfer(&env, old_owner, new_owner, token_id);
+        extend_instance_ttl(&env);
         Ok(())
     }
+}
+
+fn extend_persistent_ttl(env: &Env, key: &DataKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
+}
+
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
 }
 
 fn get_registry(env: &Env) -> Result<Address, NftError> {
@@ -463,6 +502,7 @@ fn append_token_id(env: &Env, token_id: &String) {
     env.storage()
         .persistent()
         .set(&DataKey::TokenIds, &token_ids);
+    extend_persistent_ttl(env, &DataKey::TokenIds);
 }
 
 fn add_owner_token(env: &Env, owner: &Address, token_id: &String) {
@@ -471,6 +511,7 @@ fn add_owner_token(env: &Env, owner: &Address, token_id: &String) {
     if !tokens.contains(token_id) {
         tokens.push_back(token_id.clone());
         env.storage().persistent().set(&key, &tokens);
+        extend_persistent_ttl(env, &key);
     }
 }
 
@@ -484,6 +525,7 @@ fn remove_owner_token(env: &Env, owner: &Address, token_id: &String) {
         }
     }
     env.storage().persistent().set(&key, &filtered);
+    extend_persistent_ttl(env, &key);
 }
 
 fn reindex_owner_token(

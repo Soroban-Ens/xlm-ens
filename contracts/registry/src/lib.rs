@@ -14,6 +14,13 @@ pub const ADMIN_RECOVERY_SUPPORTED: bool = false;
 pub const STORAGE_SCHEMA_VERSION: u32 = 1;
 pub const CONTRACT_VERSION: u32 = 1;
 
+// #146-#604: Centralized TTL extension policy
+// Soroban persistent entries age out unless explicitly bumped on every write.
+// All ledger-count values below are conservative minimums — operators can
+// raise them without changing contract logic.
+const PERSISTENT_LEDGER_TTL: u32 = 6_312_000; // ~1 year
+const PERSISTENT_LEDGER_THRESHOLD: u32 = PERSISTENT_LEDGER_TTL / 2;
+
 #[contracttype]
 pub struct ContractUpgraded {
     pub old_version: u32,
@@ -134,6 +141,8 @@ impl RegistryContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &CONTRACT_VERSION);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -158,6 +167,7 @@ impl RegistryContract {
         env.storage()
             .instance()
             .set(&DataKey::NftContract, &nft_contract);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -171,6 +181,7 @@ impl RegistryContract {
         env.storage()
             .instance()
             .set(&DataKey::DisputeAdmin, &dispute_admin);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -196,6 +207,8 @@ impl RegistryContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &target_version);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("contract"), symbol_short!("upgraded")),
@@ -273,6 +286,7 @@ impl RegistryContract {
             nft_client.mint(&name, &owner, &metadata_uri, &expires_at);
         }
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -351,6 +365,7 @@ impl RegistryContract {
             nft_client.sync_owner(&name, &new_owner);
         }
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -370,6 +385,7 @@ impl RegistryContract {
         }
         entry.resolver = resolver;
         put_entry(&env, &name, &entry);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -386,6 +402,7 @@ impl RegistryContract {
         ensure_owner(&entry, &caller, now_unix)?;
         entry.target_address = target_address;
         put_entry(&env, &name, &entry);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -403,6 +420,7 @@ impl RegistryContract {
         ensure_owner(&entry, &caller, now_unix)?;
         entry.metadata_uri = metadata_uri;
         put_entry(&env, &name, &entry);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -443,6 +461,7 @@ impl RegistryContract {
 
         // Note: We don't call back to the NFT contract here to avoid infinite loops
         // The NFT contract that called us is responsible for keeping its own state in sync
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -485,6 +504,7 @@ impl RegistryContract {
             nft_client.sync_expiry(&name, &expires_at);
         }
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -668,9 +688,11 @@ fn get_lock(env: &Env, name: &String) -> Option<NameLock> {
 }
 
 fn put_lock(env: &Env, name: &String, lock: &NameLock) {
+    let key = DataKey::Lock(name.clone());
     env.storage()
         .persistent()
-        .set(&DataKey::Lock(name.clone()), lock);
+        .set(&key, lock);
+    extend_persistent_ttl(env, &key);
 }
 
 fn remove_lock(env: &Env, name: &String) -> Option<NameLock> {
@@ -688,9 +710,36 @@ fn get_nft_client<'a>(env: &'a Env) -> Option<NftClient<'a>> {
 }
 
 fn put_entry(env: &Env, name: &String, entry: &RegistryEntry) {
+    let key = DataKey::Entry(name.clone());
     env.storage()
         .persistent()
-        .set(&DataKey::Entry(name.clone()), entry);
+        .set(&key, entry);
+    // Use a dynamic TTL that covers the full registration lifecycle
+    let now = env.ledger().timestamp();
+    let ttl_ledgers = if entry.expires_at > now {
+        let secs_remaining = entry.expires_at - now;
+        // Convert seconds to ledgers (~5s/ledger) + a buffer, capped at minimum
+        let ledgers_needed = (secs_remaining / 5) as u32;
+        core::cmp::max(PERSISTENT_LEDGER_TTL, ledgers_needed)
+    } else {
+        PERSISTENT_LEDGER_TTL
+    };
+    let threshold = core::cmp::min(PERSISTENT_LEDGER_THRESHOLD, ttl_ledgers / 2);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, threshold, ttl_ledgers);
+}
+
+fn extend_persistent_ttl(env: &Env, key: &DataKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
+}
+
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
 }
 
 fn validate_metadata(metadata_uri: &Option<String>) -> Result<(), RegistryError> {
@@ -769,6 +818,7 @@ fn add_owner_name(env: &Env, owner: &Address, name: &String) {
         names.push_back(name.clone());
         env.storage().persistent().set(&key, &names);
     }
+    extend_persistent_ttl(env, &key);
 }
 
 fn remove_owner_name(env: &Env, owner: &Address, name: &String) {
@@ -787,6 +837,7 @@ fn remove_owner_name(env: &Env, owner: &Address, name: &String) {
     }
 
     env.storage().persistent().set(&key, &filtered);
+    extend_persistent_ttl(env, &key);
 }
 
 fn migrate(from_version: u32, to_version: u32, _data: &Bytes) {

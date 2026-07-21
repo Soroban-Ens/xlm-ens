@@ -63,6 +63,10 @@ pub enum SubdomainError {
 
 pub const CONTRACT_VERSION: u32 = 1;
 
+// #146-#604: Centralized TTL extension policy
+const PERSISTENT_LEDGER_TTL: u32 = 6_312_000; // ~1 year
+const PERSISTENT_LEDGER_THRESHOLD: u32 = PERSISTENT_LEDGER_TTL / 2;
+
 #[contractevent]
 pub struct ContractUpgraded {
     pub old_version: u32,
@@ -87,7 +91,10 @@ impl SubdomainContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &CONTRACT_VERSION);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
         env.storage().persistent().set(&DataKey::MaxDepth, &3u32);
+        extend_persistent_ttl(&env, &DataKey::MaxDepth);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -104,6 +111,7 @@ impl SubdomainContract {
         env.storage()
             .instance()
             .set(&DataKey::RegistryContract, &registry_contract);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -122,6 +130,8 @@ impl SubdomainContract {
             .ok_or(SubdomainError::Unauthorized)?;
         admin.require_auth();
         env.storage().persistent().set(&DataKey::MaxDepth, &depth);
+        extend_persistent_ttl(&env, &DataKey::MaxDepth);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -194,10 +204,12 @@ impl SubdomainContract {
             controllers: Vec::new(&env),
         };
         env.storage().persistent().set(&key, &record);
+        extend_persistent_ttl(&env, &key);
         env.events().publish(
             (symbol_short!("subdomain"), symbol_short!("prnt_reg")),
             (parent, record.owner.clone()),
         );
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -217,11 +229,13 @@ impl SubdomainContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::Parent(parent.clone()), &parent_record);
+            extend_persistent_ttl(&env, &DataKey::Parent(parent.clone()));
             env.events().publish(
                 (symbol_short!("subdomain"), symbol_short!("ctrl_add")),
                 (parent, caller, controller),
             );
         }
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -242,12 +256,14 @@ impl SubdomainContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::Parent(parent.clone()), &parent_record);
+            extend_persistent_ttl(&env, &DataKey::Parent(parent.clone()));
             env.events().publish(
                 (symbol_short!("subdomain"), symbol_short!("ctrl_rm")),
                 (parent, caller, controller),
             );
         }
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -310,6 +326,7 @@ impl SubdomainContract {
             created_at: now_unix,
         };
         env.storage().persistent().set(&key, &record);
+        extend_persistent_ttl(&env, &key);
 
         add_parent_subdomain(&env, &parent, &fqdn);
         add_owner_subdomain(&env, &owner, &fqdn);
@@ -319,6 +336,7 @@ impl SubdomainContract {
             (fqdn.clone(), parent, caller, owner),
         );
 
+        extend_instance_ttl(&env);
         Ok(fqdn)
     }
 
@@ -341,6 +359,7 @@ impl SubdomainContract {
         env.storage()
             .persistent()
             .set(&DataKey::Subdomain(fqdn.clone()), &record);
+        extend_persistent_ttl(&env, &DataKey::Subdomain(fqdn.clone()));
 
         remove_owner_subdomain(&env, &old_owner, &fqdn);
         add_owner_subdomain(&env, &new_owner, &fqdn);
@@ -350,6 +369,7 @@ impl SubdomainContract {
             (fqdn, old_owner, new_owner),
         );
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -376,6 +396,7 @@ impl SubdomainContract {
 
         env.storage().persistent().remove(&DataKey::Subdomain(fqdn));
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -414,6 +435,7 @@ impl SubdomainContract {
         );
 
         env.storage().persistent().remove(&DataKey::Subdomain(fqdn));
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -456,6 +478,18 @@ impl SubdomainContract {
     pub fn subdomains_for_owner(env: Env, owner: Address) -> Vec<String> {
         get_owner_subdomains(&env, &owner)
     }
+}
+
+fn extend_persistent_ttl(env: &Env, key: &DataKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
+}
+
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
 }
 
 fn get_parent(env: &Env, parent: &String) -> Result<ParentDomain, SubdomainError> {
@@ -542,6 +576,7 @@ fn add_parent_subdomain(env: &Env, parent: &String, fqdn: &String) {
         env.storage()
             .persistent()
             .set(&DataKey::ParentSubdomains(parent.clone()), &subdomains);
+        extend_persistent_ttl(env, &DataKey::ParentSubdomains(parent.clone()));
     }
 }
 
@@ -552,6 +587,7 @@ fn remove_parent_subdomain(env: &Env, parent: &String, fqdn: &String) {
         env.storage()
             .persistent()
             .set(&DataKey::ParentSubdomains(parent.clone()), &subdomains);
+        extend_persistent_ttl(env, &DataKey::ParentSubdomains(parent.clone()));
     }
 }
 
@@ -569,6 +605,7 @@ fn add_owner_subdomain(env: &Env, owner: &Address, fqdn: &String) {
         env.storage()
             .persistent()
             .set(&DataKey::OwnerSubdomains(owner.clone()), &subdomains);
+        extend_persistent_ttl(env, &DataKey::OwnerSubdomains(owner.clone()));
     }
 }
 
@@ -579,6 +616,7 @@ fn remove_owner_subdomain(env: &Env, owner: &Address, fqdn: &String) {
         env.storage()
             .persistent()
             .set(&DataKey::OwnerSubdomains(owner.clone()), &subdomains);
+        extend_persistent_ttl(env, &DataKey::OwnerSubdomains(owner.clone()));
     }
 }
 

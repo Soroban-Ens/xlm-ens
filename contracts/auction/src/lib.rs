@@ -72,6 +72,9 @@ pub enum AuctionError {
 }
 
 pub const CONTRACT_VERSION: u32 = 1;
+// #146-#604: Centralized TTL extension policy
+const PERSISTENT_LEDGER_TTL: u32 = 6_312_000; // ~1 year
+const PERSISTENT_LEDGER_THRESHOLD: u32 = PERSISTENT_LEDGER_TTL / 2;
 
 #[contractevent]
 pub struct ContractUpgraded {
@@ -104,6 +107,8 @@ impl AuctionContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &CONTRACT_VERSION);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -136,6 +141,8 @@ impl AuctionContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &target_version);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
 
         #[allow(deprecated)]
         env.events().publish(
@@ -185,6 +192,7 @@ impl AuctionContract {
             treasury,
         };
         env.storage().persistent().set(&key, &auction);
+        extend_persistent_ttl(&env, &key);
 
         // Record the name in the discovery index (#157).
         let mut names: Vec<String> = env
@@ -196,6 +204,8 @@ impl AuctionContract {
         env.storage()
             .persistent()
             .set(&DataKey::AuctionNames, &names);
+        extend_persistent_ttl(&env, &DataKey::AuctionNames);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -317,6 +327,7 @@ impl AuctionContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::Settlement(name.clone()), finalized);
+            extend_persistent_ttl(&env, &DataKey::Settlement(name.clone()));
 
             let token = token::Client::new(&env, &auction.asset);
             let mut clearing_price_paid = false;
@@ -352,6 +363,7 @@ impl AuctionContract {
                 }
             }
         }
+        extend_instance_ttl(&env);
         Ok(settlement)
     }
 
@@ -472,6 +484,18 @@ fn filter_index(
     emitted
 }
 
+fn extend_persistent_ttl(env: &Env, key: &DataKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
+}
+
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
+}
+
 fn get_auction(env: &Env, name: &String) -> Result<Auction, AuctionError> {
     env.storage()
         .persistent()
@@ -480,9 +504,11 @@ fn get_auction(env: &Env, name: &String) -> Result<Auction, AuctionError> {
 }
 
 fn put_auction(env: &Env, name: &String, auction: &Auction) {
+    let key = DataKey::Auction(name.clone());
     env.storage()
         .persistent()
-        .set(&DataKey::Auction(name.clone()), auction);
+        .set(&key, auction);
+    extend_persistent_ttl(env, &key);
 }
 
 fn migrate(from_version: u32, to_version: u32, _data: &Bytes) {

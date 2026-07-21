@@ -27,6 +27,10 @@ pub const MAX_ALLOWED_RENEWAL_YEARS: u64 = 10;
 pub const ADMIN_RECOVERY_SUPPORTED: bool = false;
 pub const CONTRACT_VERSION: u32 = 1;
 
+// #146-#604: Centralized TTL extension policy
+const PERSISTENT_LEDGER_TTL: u32 = 6_312_000; // ~1 year
+const PERSISTENT_LEDGER_THRESHOLD: u32 = PERSISTENT_LEDGER_TTL / 2;
+
 #[contractevent]
 pub struct ContractUpgraded {
     pub old_version: u32,
@@ -162,6 +166,7 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &CONTRACT_VERSION);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
 
         // Initialize rate limit config with defaults if not already set
         if !env.storage().persistent().has(&DataKey::RateLimitConfig) {
@@ -172,13 +177,16 @@ impl RegistrarContract {
             env.storage()
                 .persistent()
                 .set(&DataKey::RateLimitConfig, &config);
+            extend_persistent_ttl(&env, &DataKey::RateLimitConfig);
         }
 
         if !env.storage().persistent().has(&DataKey::GracePeriodSeconds) {
             env.storage()
                 .persistent()
                 .set(&DataKey::GracePeriodSeconds, &DEFAULT_GRACE_PERIOD_SECONDS);
+            extend_persistent_ttl(&env, &DataKey::GracePeriodSeconds);
         }
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -215,6 +223,8 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &target_version);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
 
         ContractUpgraded {
             old_version: current_version,
@@ -251,6 +261,7 @@ impl RegistrarContract {
                 .publish((symbol_short!("reserved"), symbol_short!("skipped")), label);
         } else {
             env.storage().persistent().set(&key, &true);
+            extend_persistent_ttl(&env, &key);
             env.events()
                 .publish((symbol_short!("reserved"), symbol_short!("added")), label);
         }
@@ -281,6 +292,7 @@ impl RegistrarContract {
                     );
                 } else {
                     env.storage().persistent().set(&key, &true);
+                    extend_persistent_ttl(&env, &key);
                     env.events().publish(
                         (symbol_short!("reserved"), symbol_short!("added")),
                         label.clone(),
@@ -419,6 +431,13 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::Registration(name.clone()), &record);
+        // Use dynamic TTL covering registration lifecycle
+        let reg_key = DataKey::Registration(name.clone());
+        let secs_remaining = record.expires_at.saturating_sub(now_unix);
+        let ledgers_needed = (secs_remaining / 5) as u32;
+        let ttl = core::cmp::max(PERSISTENT_LEDGER_TTL, ledgers_needed);
+        let threshold = core::cmp::min(PERSISTENT_LEDGER_THRESHOLD, ttl / 2);
+        env.storage().persistent().extend_ttl(&reg_key, threshold, ttl);
 
         // Record this registration for rate limit tracking
         record_registration(&env, &owner, now_unix)?;
@@ -432,6 +451,7 @@ impl RegistrarContract {
             &DataKey::Treasury,
             &treasury.saturating_add(quote.fee_stroops),
         );
+        extend_persistent_ttl(&env, &DataKey::Treasury);
         let reg_count = env
             .storage()
             .persistent()
@@ -440,6 +460,7 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::RegistrationCount, &reg_count.saturating_add(1));
+        extend_persistent_ttl(&env, &DataKey::RegistrationCount);
 
         let registry: Address = env
             .storage()
@@ -473,6 +494,7 @@ impl RegistrarContract {
             ),
         );
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -522,6 +544,13 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::Registration(name.clone()), &record);
+        // Use dynamic TTL covering registration lifecycle
+        let reg_key = DataKey::Registration(name.clone());
+        let secs_remaining = record.expires_at.saturating_sub(now_unix);
+        let ledgers_needed = (secs_remaining / 5) as u32;
+        let ttl = core::cmp::max(PERSISTENT_LEDGER_TTL, ledgers_needed);
+        let threshold = core::cmp::min(PERSISTENT_LEDGER_THRESHOLD, ttl / 2);
+        env.storage().persistent().extend_ttl(&reg_key, threshold, ttl);
 
         let treasury = env
             .storage()
@@ -532,6 +561,7 @@ impl RegistrarContract {
             &DataKey::Treasury,
             &treasury.saturating_add(payment_stroops),
         );
+        extend_persistent_ttl(&env, &DataKey::Treasury);
         let renew_count = env
             .storage()
             .persistent()
@@ -540,6 +570,7 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::RenewalCount, &renew_count.saturating_add(1));
+        extend_persistent_ttl(&env, &DataKey::RenewalCount);
 
         let registry: Address = env
             .storage()
@@ -571,6 +602,7 @@ impl RegistrarContract {
             ),
         );
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -698,6 +730,8 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::RateLimitConfig, &config);
+        extend_persistent_ttl(&env, &DataKey::RateLimitConfig);
+        extend_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("registrar"), symbol_short!("rate")),
@@ -738,6 +772,8 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::GracePeriodSeconds, &grace_period_seconds);
+        extend_persistent_ttl(&env, &DataKey::GracePeriodSeconds);
+        extend_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("registrar"), symbol_short!("grace")),
@@ -802,6 +838,13 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::Registration(name.clone()), &record);
+        // Use dynamic TTL covering registration lifecycle
+        let reg_key = DataKey::Registration(name.clone());
+        let secs_remaining = record.expires_at.saturating_sub(now_unix);
+        let ledgers_needed = (secs_remaining / 5) as u32;
+        let ttl = core::cmp::max(PERSISTENT_LEDGER_TTL, ledgers_needed);
+        let threshold = core::cmp::min(PERSISTENT_LEDGER_THRESHOLD, ttl / 2);
+        env.storage().persistent().extend_ttl(&reg_key, threshold, ttl);
 
         let treasury = env
             .storage()
@@ -812,6 +855,7 @@ impl RegistrarContract {
             &DataKey::Treasury,
             &treasury.saturating_add(payment_stroops),
         );
+        extend_persistent_ttl(&env, &DataKey::Treasury);
         let renew_count = env
             .storage()
             .persistent()
@@ -820,6 +864,7 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::RenewalCount, &renew_count.saturating_add(1));
+        extend_persistent_ttl(&env, &DataKey::RenewalCount);
 
         let registry: Address = env
             .storage()
@@ -851,6 +896,7 @@ impl RegistrarContract {
             ),
         );
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -866,6 +912,8 @@ impl RegistrarContract {
         env.storage()
             .persistent()
             .set(&DataKey::WhitelistedAddress(address.clone()), &true);
+        extend_persistent_ttl(&env, &DataKey::WhitelistedAddress(address.clone()));
+        extend_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("registrar"), symbol_short!("wlist")),
@@ -886,6 +934,7 @@ impl RegistrarContract {
         admin.require_auth();
         let key = DataKey::WhitelistedAddress(address.clone());
         env.storage().persistent().remove(&key);
+        extend_instance_ttl(&env);
 
         env.events().publish(
             (symbol_short!("registrar"), symbol_short!("unwlist")),
@@ -972,8 +1021,21 @@ fn record_registration(env: &Env, address: &Address, now_unix: u64) -> Result<()
     env.storage()
         .persistent()
         .set(&key, &count.saturating_add(1));
+    extend_persistent_ttl(env, &key);
 
     Ok(())
+}
+
+fn extend_persistent_ttl(env: &Env, key: &DataKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
+}
+
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
 }
 
 fn build_quote(env: &Env, label: &String, years: u64, now_unix: u64) -> RegistrationQuote {

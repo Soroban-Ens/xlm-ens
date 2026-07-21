@@ -47,6 +47,9 @@ pub enum BridgeError {
 }
 
 pub const CONTRACT_VERSION: u32 = 1;
+// #146-#604: Centralized TTL extension policy
+const PERSISTENT_LEDGER_TTL: u32 = 6_312_000; // ~1 year
+const PERSISTENT_LEDGER_THRESHOLD: u32 = PERSISTENT_LEDGER_TTL / 2;
 
 #[contractevent]
 pub struct ContractUpgraded {
@@ -83,6 +86,8 @@ impl BridgeContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &CONTRACT_VERSION);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -115,6 +120,8 @@ impl BridgeContract {
         env.storage()
             .persistent()
             .set(&DataKey::ContractVersion, &target_version);
+        extend_persistent_ttl(&env, &DataKey::ContractVersion);
+        extend_instance_ttl(&env);
 
         #[allow(deprecated)]
         env.events().publish(
@@ -160,7 +167,9 @@ impl BridgeContract {
 
         env.storage()
             .persistent()
-            .set(&DataKey::Route(chain), &route);
+            .set(&DataKey::Route(chain.clone()), &route);
+        extend_persistent_ttl(&env, &DataKey::Route(chain.clone()));
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -197,6 +206,7 @@ impl BridgeContract {
         env.storage()
             .persistent()
             .set(&DataKey::SupportedChain(chain_id.clone()), &supported);
+        extend_persistent_ttl(&env, &DataKey::SupportedChain(chain_id.clone()));
 
         let mut chain_ids: Vec<String> = env
             .storage()
@@ -207,6 +217,7 @@ impl BridgeContract {
         env.storage()
             .persistent()
             .set(&DataKey::SupportedChainIds, &chain_ids);
+        extend_persistent_ttl(&env, &DataKey::SupportedChainIds);
 
         SupportedChainAdded {
             chain_id,
@@ -214,6 +225,7 @@ impl BridgeContract {
         }
         .publish(&env);
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -254,6 +266,7 @@ impl BridgeContract {
         env.storage()
             .persistent()
             .set(&DataKey::SupportedChainIds, &updated);
+        extend_persistent_ttl(&env, &DataKey::SupportedChainIds);
 
         // Drop any cached route so removed chains cannot be resolved.
         env.storage()
@@ -262,6 +275,7 @@ impl BridgeContract {
 
         SupportedChainRemoved { chain_id }.publish(&env);
 
+        extend_instance_ttl(&env);
         Ok(())
     }
 
@@ -338,6 +352,18 @@ impl BridgeContract {
     pub fn route(env: Env, chain: String) -> Option<BridgeRoute> {
         env.storage().persistent().get(&DataKey::Route(chain))
     }
+}
+
+fn extend_persistent_ttl(env: &Env, key: &DataKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
+}
+
+fn extend_instance_ttl(env: &Env) {
+    env.storage()
+        .instance()
+        .extend_ttl(PERSISTENT_LEDGER_THRESHOLD, PERSISTENT_LEDGER_TTL);
 }
 
 #[allow(dead_code)]
