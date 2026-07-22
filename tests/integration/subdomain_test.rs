@@ -5,7 +5,7 @@ use soroban_sdk::{
 
 use xlm_ns_registry::{NameState, RegistryContract, RegistryContractClient};
 use xlm_ns_resolver::ResolverContract;
-use xlm_ns_subdomain::SubdomainContract;
+use xlm_ns_subdomain::{SubdomainContract, SubdomainError};
 
 #[test]
 fn subdomain_flow_covers_controller_delegation_transfer_and_resolution() {
@@ -337,4 +337,108 @@ fn subdomain_transfer_attempts_fail_during_parent_grace_period() {
 
     assert!(subdomain.record(&fqdn).is_none());
     assert!(!subdomain.exists(&fqdn));
+}
+
+/// Covers every parent lifecycle state named in the acceptance criteria for
+/// the "subdomain creation does not check parent expiry status" bug:
+/// `create` must be rejected while the parent is in `GracePeriod` or
+/// `Claimable`, and rejected with a distinct, specific error in each case,
+/// rather than a single generic failure.
+#[test]
+fn create_rejects_parent_by_lifecycle_state_with_specific_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let registry_contract_id = env.register(RegistryContract, ());
+    let subdomain_contract_id = env.register(SubdomainContract, ());
+
+    let registry = RegistryContractClient::new(&env, &registry_contract_id);
+    let subdomain = xlm_ns_subdomain::SubdomainContractClient::new(&env, &subdomain_contract_id);
+
+    let admin = Address::generate(&env);
+    let parent_owner = Address::generate(&env);
+    let sub_owner = Address::generate(&env);
+
+    let parent = String::from_str(&env, "carol.xlm");
+    let unregistered_parent = String::from_str(&env, "ghost.xlm");
+    let label = String::from_str(&env, "pay");
+
+    let start = 3_000_000u64;
+    let expiry = start + 1_000;
+    let grace_end = expiry + 1_000;
+
+    env.ledger().set_timestamp(start);
+
+    registry.initialize(&admin);
+    subdomain.initialize(&admin);
+    subdomain.set_registry_contract(&registry_contract_id);
+
+    // Parent does not exist at all: creation must fail with ParentNotFound.
+    let missing_parent_result =
+        subdomain.try_create(&label, &unregistered_parent, &parent_owner, &sub_owner, &start);
+    assert!(
+        matches!(
+            missing_parent_result,
+            Err(Ok(SubdomainError::ParentNotFound))
+        ),
+        "creation under a nonexistent parent should report ParentNotFound"
+    );
+
+    registry.register(
+        &parent,
+        &parent_owner,
+        &None::<String>,
+        &None::<String>,
+        &start,
+        &expiry,
+        &grace_end,
+    );
+    subdomain.register_parent(&parent, &parent_owner);
+
+    // Parent is Active: creation succeeds.
+    let fqdn = subdomain.create(&label, &parent, &parent_owner, &sub_owner, &(start + 1));
+    assert!(subdomain.exists(&fqdn));
+
+    // Parent enters its grace period: creation must be rejected with
+    // ParentInGracePeriod, not a generic error.
+    env.ledger().set_timestamp(expiry + 1);
+    assert_eq!(
+        registry.name_state(&parent, &(expiry + 1)),
+        NameState::GracePeriod
+    );
+    let grace_result = subdomain.try_create(
+        &String::from_str(&env, "other"),
+        &parent,
+        &parent_owner,
+        &sub_owner,
+        &(expiry + 2),
+    );
+    assert!(
+        matches!(grace_result, Err(Ok(SubdomainError::ParentInGracePeriod))),
+        "creation while parent is in grace period should report ParentInGracePeriod"
+    );
+
+    // Parent passes grace and becomes Claimable: creation must be rejected
+    // with ParentClaimable.
+    env.ledger().set_timestamp(grace_end + 1);
+    assert_eq!(
+        registry.name_state(&parent, &(grace_end + 1)),
+        NameState::Claimable
+    );
+    let claimable_result = subdomain.try_create(
+        &String::from_str(&env, "other"),
+        &parent,
+        &parent_owner,
+        &sub_owner,
+        &(grace_end + 2),
+    );
+    assert!(
+        matches!(claimable_result, Err(Ok(SubdomainError::ParentClaimable))),
+        "creation while parent is claimable should report ParentClaimable"
+    );
+
+    // The previously created subdomain must no longer be reachable once the
+    // parent left the Active state.
+    assert!(!subdomain.exists(&fqdn));
+    assert!(subdomain.record(&fqdn).is_none());
 }
