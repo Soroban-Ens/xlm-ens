@@ -111,6 +111,12 @@ impl XlmNsBlockingClient {
         self.block_on(self.inner.resolve(name))
     }
 
+    /// Synchronous [`XlmNsClient::batch_resolve`]. Chunking, per-chunk retry,
+    /// and per-name error reporting behave identically to the async method.
+    pub fn batch_resolve(&self, names: Vec<String>) -> Result<Vec<BatchResult>, SdkError> {
+        self.block_on(self.inner.batch_resolve(names))
+    }
+
     pub fn get_registration(&self, name: &str) -> Result<Option<ResolutionResult>, SdkError> {
         self.block_on(self.inner.get_registration(name))
     }
