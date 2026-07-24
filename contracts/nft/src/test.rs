@@ -687,6 +687,120 @@ mod tests {
         assert_owner_enumeration_consistent(&env, &client, &alice);
     }
 
+    // ── operator approval (approve_all / setApprovalForAll) ────────────────
+
+    #[test]
+    fn operator_can_be_approved_and_transfer_any_owned_token() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let client = NftContractClient::new(&env, &env.register(NftContract, ()));
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let alice = Address::generate(&env);
+        let operator = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let alpha = String::from_str(&env, "alpha.xlm");
+        let beta = String::from_str(&env, "beta.xlm");
+
+        client.mint(&alpha, &alice, &None::<String>, &0_u64);
+        client.mint(&beta, &alice, &None::<String>, &0_u64);
+
+        assert!(!client.is_approved_for_all(&alice, &operator));
+
+        client.approve_all(&alice, &operator, &true);
+        assert!(client.is_approved_for_all(&alice, &operator));
+
+        // Operator can transfer either token without a per-token approval.
+        client.transfer(&alpha, &operator, &recipient);
+        client.transfer_from(&operator, &alice, &recipient, &beta);
+
+        assert_eq!(client.owner_of(&alpha), Some(recipient.clone()));
+        assert_eq!(client.owner_of(&beta), Some(recipient));
+        assert_eq!(client.balance_of(&alice), 0);
+    }
+
+    #[test]
+    fn operator_approval_can_be_revoked() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let client = NftContractClient::new(&env, &env.register(NftContract, ()));
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let alice = Address::generate(&env);
+        let operator = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let token_id = String::from_str(&env, "timmy.xlm");
+
+        client.mint(&token_id, &alice, &None::<String>, &0_u64);
+
+        client.approve_all(&alice, &operator, &true);
+        assert!(client.is_approved_for_all(&alice, &operator));
+
+        client.approve_all(&alice, &operator, &false);
+        assert!(!client.is_approved_for_all(&alice, &operator));
+
+        let revoked_transfer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.transfer(&token_id, &operator, &recipient);
+        }));
+        assert!(
+            revoked_transfer.is_err(),
+            "transfer should fail after operator approval is revoked"
+        );
+        assert_eq!(client.owner_of(&token_id), Some(alice));
+    }
+
+    #[test]
+    fn operator_approval_is_scoped_to_owner_and_operator_pair() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let client = NftContractClient::new(&env, &env.register(NftContract, ()));
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let operator = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let token_id = String::from_str(&env, "timmy.xlm");
+
+        client.mint(&token_id, &bob, &None::<String>, &0_u64);
+
+        // Alice approves the operator, but the token is owned by Bob, who
+        // never approved anyone — the operator must not be able to move it.
+        client.approve_all(&alice, &operator, &true);
+        assert!(client.is_approved_for_all(&alice, &operator));
+        assert!(!client.is_approved_for_all(&bob, &operator));
+
+        let unauthorized_transfer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.transfer(&token_id, &operator, &recipient);
+        }));
+        assert!(
+            unauthorized_transfer.is_err(),
+            "operator approved by a different owner must not authorize transfer"
+        );
+        assert_eq!(client.owner_of(&token_id), Some(bob));
+    }
+
+    #[test]
+    fn test_approve_all_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let client = NftContractClient::new(&env, &env.register(NftContract, ()));
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let alice = Address::generate(&env);
+        let operator = Address::generate(&env);
+
+        client.approve_all(&alice, &operator, &true);
+
+        let events = env.events().all();
+        let (topics, _data) = last_event_topics_data(&events);
+        assert_first_topic_is_symbol(topics, "appr_all");
+    }
+
     #[test]
     fn version_is_exposed() {
         let env = Env::default();
