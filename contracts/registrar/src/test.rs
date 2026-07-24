@@ -1039,8 +1039,8 @@ mod tests {
         client.initialize(&registry_id, &Address::generate(&env));
 
         assert!(matches!(
-            client.try_set_grace_period(&0),
-            Err(Ok(RegistrarError::Validation))
+            client.try_set_grace_period_impl(&0),
+            Err(Ok(e)) if e == RegistrarError::Validation.into()
         ));
     }
 
@@ -1168,4 +1168,65 @@ mod tests {
             RegistrationStatus::Claimable
         );
     }
+
+    #[test]
+    fn treasury_withdrawal_flow() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        // Register a name to generate treasury balance
+        let owner = Address::generate(&env);
+        let label = String::from_str(&env, "treas");
+        let quote = client.quote_registration(&label, &1, &100);
+        client.register(&label, &owner, &1, &quote.fee_stroops, &100);
+
+        // Set treasury address
+        let treasury_addr = Address::generate(&env);
+        client.set_treasury_address(&treasury_addr);
+        assert_eq!(client.get_treasury_address().unwrap(), treasury_addr);
+
+        let balance_before = client.treasury_balance();
+        let withdraw_amount = balance_before / 2;
+        // Withdraw half of the balance
+        client.withdraw_treasury(&withdraw_amount);
+        assert_eq!(client.treasury_balance(), balance_before - withdraw_amount);
+    }
+
+    #[test]
+    fn withdraw_fails_when_not_configured() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        let result = client.try_withdraw_treasury(&10);
+        assert!(matches!(
+            result,
+            Err(Ok(e)) if e == RegistrarError::TreasuryNotConfigured
+        ));    }
+
+    #[test]
+    fn withdraw_fails_on_insufficient_balance() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        let treasury_addr = Address::generate(&env);
+        client.set_treasury_address(&treasury_addr);
+
+        // No treasury balance yet
+        let result = client.try_withdraw_treasury(&1);
+        assert!(matches!(
+            result,
+            Err(Ok(e)) if e == RegistrarError::InsufficientTreasuryBalance
+        ));    }
 }
