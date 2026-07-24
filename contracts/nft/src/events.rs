@@ -41,3 +41,13 @@ pub fn burn(env: &Env, owner: Address, token_id: String) {
     env.events()
         .publish((symbol_short!("burn"), owner), token_id);
 }
+
+/// Emitted when operator approval is granted or revoked for all of an
+/// owner's tokens.
+/// topics : ("appr_all", owner: Address, operator: Address)
+/// data   : approved: bool
+#[allow(deprecated)]
+pub fn approve_all(env: &Env, owner: Address, operator: Address, approved: bool) {
+    env.events()
+        .publish((symbol_short!("appr_all"), owner, operator), approved);
+}
