@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(deprecated, clippy::too_many_arguments)]
 mod expiry_boundary_test;
+mod lifecycle_proptest;
 mod test;
 
 use soroban_sdk::{
