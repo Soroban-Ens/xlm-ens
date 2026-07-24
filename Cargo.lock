@@ -5260,6 +5260,7 @@ dependencies = [
 name = "xlm-ns-registry"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "soroban-sdk 26.0.0-rc.1",
  "xlm-ns-common",
 ]
