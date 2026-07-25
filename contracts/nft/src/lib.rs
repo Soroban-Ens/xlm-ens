@@ -46,6 +46,7 @@ enum DataKey {
     ContractVersion,
     NameData(String),
     Registry,
+    OperatorApproval(Address, Address),
 }
 
 #[contracterror]
@@ -244,6 +245,7 @@ impl NftContract {
         caller: Address,
         approved: Address,
     ) -> Result<(), NftError> {
+        caller.require_auth();
         let mut record = get_token(&env, &token_id)?;
         if record.owner != caller {
             return Err(NftError::Unauthorized);
@@ -257,6 +259,7 @@ impl NftContract {
     }
 
     pub fn approve_clear(env: Env, token_id: String, caller: Address) -> Result<(), NftError> {
+        caller.require_auth();
         let mut record = get_token(&env, &token_id)?;
         if record.owner != caller {
             return Err(NftError::Unauthorized);
@@ -269,14 +272,37 @@ impl NftContract {
         Ok(())
     }
 
+    /// Approves or revokes an operator's right to transfer any token owned
+    /// by `caller`. Mirrors ERC-721's `setApprovalForAll`.
+    pub fn approve_all(
+        env: Env,
+        caller: Address,
+        operator: Address,
+        approved: bool,
+    ) -> Result<(), NftError> {
+        caller.require_auth();
+        env.storage().persistent().set(
+            &DataKey::OperatorApproval(caller.clone(), operator.clone()),
+            &approved,
+        );
+        events::approve_all(&env, caller, operator, approved);
+        Ok(())
+    }
+
+    pub fn is_approved_for_all(env: Env, owner: Address, operator: Address) -> bool {
+        is_operator_approved(&env, &owner, &operator)
+    }
+
     pub fn transfer(
         env: Env,
         token_id: String,
         caller: Address,
         new_owner: Address,
     ) -> Result<(), NftError> {
+        caller.require_auth();
         let mut record = get_token(&env, &token_id)?;
-        if record.owner != caller && record.approved.as_ref() != Some(&caller) {
+        let is_operator = is_operator_approved(&env, &record.owner, &caller);
+        if record.owner != caller && record.approved.as_ref() != Some(&caller) && !is_operator {
             return Err(NftError::Unauthorized);
         }
         let previous_owner = record.owner.clone();
@@ -308,8 +334,12 @@ impl NftContract {
         recipient: Address,
         token_id: String,
     ) -> Result<(), NftError> {
+        spender.require_auth();
         let mut record = get_token(&env, &token_id)?;
-        if record.owner != owner || record.approved.as_ref() != Some(&spender) {
+        let is_operator = is_operator_approved(&env, &owner, &spender);
+        if record.owner != owner
+            || (record.approved.as_ref() != Some(&spender) && !is_operator)
+        {
             return Err(NftError::Unauthorized);
         }
         record.owner = recipient.clone();
@@ -441,6 +471,13 @@ fn get_token(env: &Env, token_id: &String) -> Result<TokenRecord, NftError> {
         .persistent()
         .get(&DataKey::Token(token_id.clone()))
         .ok_or(NftError::NotFound)
+}
+
+fn is_operator_approved(env: &Env, owner: &Address, operator: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::OperatorApproval(owner.clone(), operator.clone()))
+        .unwrap_or(false)
 }
 
 fn token_ids(env: &Env) -> Vec<String> {

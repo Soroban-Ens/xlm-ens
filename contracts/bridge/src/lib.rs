@@ -47,6 +47,7 @@ pub enum BridgeError {
 }
 
 pub const CONTRACT_VERSION: u32 = 1;
+pub const MAX_BATCH_CHAINS: u32 = 10;
 
 #[contractevent]
 pub struct ContractUpgraded {
@@ -333,6 +334,92 @@ impl BridgeContract {
             &route.destination_chain,
             &route.destination_resolver,
         ))
+    }
+
+    pub fn batch_build_messages(
+        env: Env,
+        name: String,
+        chains: Vec<String>,
+    ) -> Vec<Result<String, BridgeError>> {
+        if chains.len() > MAX_BATCH_CHAINS {
+            panic!("Batch size exceeds maximum limit");
+        }
+        let mut results = Vec::new(&env);
+        let name_valid = validate_fqdn_soroban(&name).is_ok();
+
+        for chain in chains.iter() {
+            if !name_valid {
+                results.push_back(Err(BridgeError::Validation));
+                continue;
+            }
+            if validate_chain_name_soroban(&chain).is_err() {
+                results.push_back(Err(BridgeError::Validation));
+                continue;
+            }
+            let route_opt: Option<BridgeRoute> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Route(chain.clone()));
+            match route_opt {
+                Some(route) => {
+                    let msg = build_forward_gmp_message(
+                        &env,
+                        &name,
+                        &route.destination_chain,
+                        &route.destination_resolver,
+                    );
+                    results.push_back(Ok(msg));
+                }
+                None => {
+                    results.push_back(Err(BridgeError::UnsupportedChain));
+                }
+            }
+        }
+        results
+    }
+
+    pub fn batch_build_reverse_messages(
+        env: Env,
+        address: String,
+        primary_name: String,
+        chains: Vec<String>,
+    ) -> Vec<Result<String, BridgeError>> {
+        if chains.len() > MAX_BATCH_CHAINS {
+            panic!("Batch size exceeds maximum limit");
+        }
+        let mut results = Vec::new(&env);
+        let input_valid = !address.is_empty() && !primary_name.is_empty() && validate_fqdn_soroban(&primary_name).is_ok();
+
+        for chain in chains.iter() {
+            if !input_valid {
+                results.push_back(Err(BridgeError::Validation));
+                continue;
+            }
+            if validate_chain_name_soroban(&chain).is_err() {
+                results.push_back(Err(BridgeError::Validation));
+                continue;
+            }
+            let route_opt: Option<BridgeRoute> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Route(chain.clone()));
+            match route_opt {
+                Some(route) => {
+                    let msg = build_reverse_gmp_message(
+                        &env,
+                        &address,
+                        &primary_name,
+                        &route.destination_chain,
+                        &route.destination_resolver,
+                    );
+                    results.push_back(Ok(msg));
+                }
+                None => {
+                    results.push_back(Err(BridgeError::UnsupportedChain));
+                }
+            }
+        }
+        results
     }
 
     pub fn route(env: Env, chain: String) -> Option<BridgeRoute> {
