@@ -9,9 +9,13 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
 
 [dependencies.xlm-ns-common]
 path = "../packages/xlm-ns-common"
+
+[dependencies.xlm-ns-registrar]
+path = "../contracts/registrar"
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -26,5 +30,17 @@ doc = false
 [[bin]]
 name = "fuzz_parse_fqdn"
 path = "fuzz_targets/fuzz_parse_fqdn.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_pricing_calculation"
+path = "fuzz_targets/fuzz_pricing_calculation.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_quote_construction"
+path = "fuzz_targets/fuzz_quote_construction.rs"
 test = false
 doc = false
