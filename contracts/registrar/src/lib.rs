@@ -1039,13 +1039,30 @@ fn record_registration(env: &Env, address: &Address, now_unix: u64) -> Result<()
 }
 
 fn build_quote(env: &Env, label: &String, years: u64, now_unix: u64) -> RegistrationQuote {
-    let annual_fee = price_for_label_length(label.len() as usize);
+    build_quote_pure(
+        label.len() as usize,
+        years,
+        now_unix,
+        get_grace_period_seconds(env),
+    )
+}
+
+/// Env-free core of [`build_quote`]. Pulled out so the pricing/quote math can
+/// be fuzzed directly (see `fuzz/fuzz_targets/fuzz_quote_construction.rs`)
+/// without needing a live contract storage context.
+pub fn build_quote_pure(
+    label_length: usize,
+    years: u64,
+    now_unix: u64,
+    grace_period_seconds: u64,
+) -> RegistrationQuote {
+    let annual_fee = price_for_label_length(label_length);
     let expiry_unix = expiry_from_now(now_unix, years);
 
     RegistrationQuote {
         fee_stroops: annual_fee.saturating_mul(years),
         expiry_unix,
-        grace_period_ends_at: compute_grace_period_ends_at(env, expiry_unix),
+        grace_period_ends_at: grace_period_ends_at_with_duration(expiry_unix, grace_period_seconds),
         valid_until: now_unix.saturating_add(QUOTE_VALIDITY_SECONDS),
         pricing: PricingBreakdown {
             annual_fee_stroops: annual_fee,
