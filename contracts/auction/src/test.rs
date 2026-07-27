@@ -10,7 +10,7 @@ mod tests {
         contract, contractimpl, contracttype, testutils::Address as _, Address, Env, String,
     };
 
-    use crate::{AuctionContract, AuctionContractClient};
+    use crate::{AuctionContract, AuctionContractClient, AuctionError};
 
     #[contract]
     pub struct ReentrantToken;
@@ -480,5 +480,208 @@ mod tests {
         let huge = client.list_auctions(&0, &u32::MAX);
         // Contract caps at MAX_PAGE_SIZE (100), but we only have 5.
         assert_eq!(huge.len(), 5);
+    }
+
+    #[test]
+    fn test_settle_single_bid_at_reserve() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(AuctionContract, ());
+        let client = AuctionContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let (asset, token_admin, token) = setup_token(&env);
+        let treasury = Address::generate(&env);
+        let alice = Address::generate(&env);
+
+        token_admin.mint(&alice, &1000);
+        let name = String::from_str(&env, "atreserve.xlm");
+        client.create_auction(&name, &asset, &treasury, &500, &10, &20);
+        client.place_bid(&name, &alice, &500, &15);
+
+        let settlement = client.settle(&name, &21).unwrap();
+        assert_eq!(settlement.winner, Some(alice.clone()));
+        assert_eq!(settlement.winning_bid, 500);
+        assert_eq!(settlement.clearing_price, 500);
+        assert!(settlement.sold);
+
+        assert_eq!(token.balance(&alice), 1000 - 500);
+        assert_eq!(token.balance(&treasury), 500);
+    }
+
+    #[test]
+    fn test_settle_single_bid_above_reserve() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(AuctionContract, ());
+        let client = AuctionContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let (asset, token_admin, token) = setup_token(&env);
+        let treasury = Address::generate(&env);
+        let alice = Address::generate(&env);
+
+        token_admin.mint(&alice, &1000);
+        let name = String::from_str(&env, "abovres.xlm");
+        client.create_auction(&name, &asset, &treasury, &300, &10, &20);
+        client.place_bid(&name, &alice, &750, &15);
+
+        let settlement = client.settle(&name, &21).unwrap();
+        assert_eq!(settlement.winner, Some(alice.clone()));
+        assert_eq!(settlement.winning_bid, 750);
+        // Vickrey property: with no second bid to set the price, clearing
+        // price falls back to the reserve rather than the winner's own bid.
+        assert_eq!(settlement.clearing_price, 300);
+        assert!(settlement.sold);
+
+        assert_eq!(token.balance(&alice), 1000 - 300);
+        assert_eq!(token.balance(&treasury), 300);
+    }
+
+    #[test]
+    fn test_settle_same_bidder_multiple_bids() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(AuctionContract, ());
+        let client = AuctionContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let (asset, token_admin, token) = setup_token(&env);
+        let treasury = Address::generate(&env);
+        let alice = Address::generate(&env);
+
+        token_admin.mint(&alice, &2000);
+        let name = String::from_str(&env, "repeat.xlm");
+        client.create_auction(&name, &asset, &treasury, &100, &10, &20);
+
+        // Alice raises her own bid twice. The highest of her bids should win,
+        // and the clearing price should be her own second-highest bid since
+        // every bid in the auction came from the same address.
+        client.place_bid(&name, &alice, &300, &12);
+        client.place_bid(&name, &alice, &500, &13);
+        client.place_bid(&name, &alice, &400, &14);
+
+        let settlement = client.settle(&name, &21).unwrap();
+        assert_eq!(settlement.winner, Some(alice.clone()));
+        assert_eq!(settlement.winning_bid, 500);
+        assert_eq!(settlement.clearing_price, 400);
+        assert!(settlement.sold);
+
+        // All three bids were escrowed on placement; settlement should leave
+        // Alice out of pocket by exactly the clearing price.
+        assert_eq!(token.balance(&alice), 2000 - 400);
+        assert_eq!(token.balance(&treasury), 400);
+    }
+
+    #[test]
+    fn test_settle_all_below_reserve() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(AuctionContract, ());
+        let client = AuctionContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let (asset, token_admin, token) = setup_token(&env);
+        let treasury = Address::generate(&env);
+        let alice = Address::generate(&env);
+        let bob = Address::generate(&env);
+        let charlie = Address::generate(&env);
+
+        token_admin.mint(&alice, &1000);
+        token_admin.mint(&bob, &1000);
+        token_admin.mint(&charlie, &1000);
+        let name = String::from_str(&env, "belowres.xlm");
+        client.create_auction(&name, &asset, &treasury, &900, &10, &20);
+        client.place_bid(&name, &alice, &400, &12);
+        client.place_bid(&name, &bob, &850, &13);
+        client.place_bid(&name, &charlie, &600, &14);
+
+        let settlement = client.settle(&name, &21).unwrap();
+        assert_eq!(settlement.winner, None);
+        assert_eq!(settlement.clearing_price, 0);
+        assert_eq!(settlement.winning_bid, 850);
+        assert!(!settlement.sold);
+
+        assert_eq!(token.balance(&alice), 1000);
+        assert_eq!(token.balance(&bob), 1000);
+        assert_eq!(token.balance(&charlie), 1000);
+        assert_eq!(token.balance(&treasury), 0);
+    }
+
+    #[test]
+    fn test_settle_bid_at_zero_amount_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(AuctionContract, ());
+        let client = AuctionContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let (asset, token_admin, _) = setup_token(&env);
+        let treasury = Address::generate(&env);
+        let alice = Address::generate(&env);
+        token_admin.mint(&alice, &1000);
+
+        let name = String::from_str(&env, "zerobid.xlm");
+        client.create_auction(&name, &asset, &treasury, &100, &10, &20);
+
+        // A zero-amount bid must be rejected by place_bid's InvalidBid check
+        // before it can ever reach settlement.
+        let result = client.try_place_bid(&name, &alice, &0, &15);
+        assert!(matches!(result, Err(Ok(AuctionError::InvalidBid))));
+
+        let auction = client.auction(&name).unwrap();
+        assert_eq!(auction.bids.len(), 0);
+    }
+
+    #[test]
+    fn test_settle_at_exact_end_time() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(AuctionContract, ());
+        let client = AuctionContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let (asset, token_admin, token) = setup_token(&env);
+        let treasury = Address::generate(&env);
+        let alice = Address::generate(&env);
+        token_admin.mint(&alice, &1000);
+
+        let name = String::from_str(&env, "endtime.xlm");
+        client.create_auction(&name, &asset, &treasury, &100, &10, &20);
+        client.place_bid(&name, &alice, &500, &15);
+
+        // settle()'s AuctionNotEnded guard only rejects `now_unix < ends_at`,
+        // matching the inclusive `[starts_at, ends_at]` bidding window used
+        // by is_time_window_open elsewhere in the contract. So settling at
+        // now_unix == ends_at (20) succeeds rather than being rejected.
+        let settlement = client.settle(&name, &20).unwrap();
+        assert_eq!(settlement.winner, Some(alice.clone()));
+        assert_eq!(settlement.settled_at, 20);
+        assert!(settlement.sold);
+
+        assert_eq!(token.balance(&alice), 1000 - 100);
+        assert_eq!(token.balance(&treasury), 100);
+
+        // One tick earlier, the same settle call is still rejected.
+        let contract_id2 = env.register(AuctionContract, ());
+        let client2 = AuctionContractClient::new(&env, &contract_id2);
+        client2.initialize(&admin);
+        let name2 = String::from_str(&env, "toosoon.xlm");
+        client2.create_auction(&name2, &asset, &treasury, &100, &10, &20);
+        client2.place_bid(&name2, &alice, &500, &15);
+        let result = client2.try_settle(&name2, &19);
+        assert!(matches!(result, Err(Ok(AuctionError::AuctionNotEnded))));
     }
 }
