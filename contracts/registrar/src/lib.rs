@@ -7,8 +7,8 @@ mod test;
 use expiry::{expiry_from_now, grace_period_ends_at_with_duration};
 use pricing::price_for_label_length;
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, symbol_short, Address,
-    Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
+    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error,
+    symbol_short, Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
 };
 use xlm_ns_common::soroban::{
     build_xlm_name, extract_label_soroban, validate_label_soroban,
@@ -44,6 +44,18 @@ pub struct ContractUpgraded {
 // Default rate limit: 5 registrations per 24 hours (86400 seconds)
 pub const DEFAULT_RATE_LIMIT_WINDOW_SECONDS: u64 = 86400;
 pub const DEFAULT_MAX_REGISTRATIONS_PER_WINDOW: u64 = 5;
+
+/// Maximum number of names that may be registered in a single batch invocation.
+pub const MAX_BATCH_REGISTRATIONS: u32 = 10;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct BatchRegistration {
+    pub label: String,
+    pub owner: Address,
+    pub years: u64,
+    pub max_price: u64,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -377,114 +389,55 @@ impl RegistrarContract {
         now_unix: u64,
     ) -> Result<(), RegistrarError> {
         owner.require_auth();
-
-        validate_label_soroban(&label).map_err(|_| RegistrarError::Validation)?;
-
-        if now_unix > now_unix.saturating_add(QUOTE_VALIDITY_SECONDS) {
-            return Err(RegistrarError::QuoteExpired);
-        }
-
-        validate_registration_years_soroban(years).map_err(|_| RegistrarError::Validation)?;
-
-        if env
-            .storage()
-            .persistent()
-            .get::<_, bool>(&DataKey::Reserved(label.clone()))
-            .unwrap_or(false)
-        {
-            return Err(RegistrarError::Reserved);
-        }
-
-        // Check rate limit before proceeding with registration
         check_rate_limit(&env, &owner, now_unix)?;
-
-        let quote = build_quote(&env, &label, years, now_unix);
-        if max_price < quote.fee_stroops {
-            return Err(RegistrarError::InsufficientFee);
-        }
-
-        if now_unix > quote.valid_until {
-            return Err(RegistrarError::QuoteExpired);
-        }
-
-        let name = build_xlm_name(&env, &label).map_err(|_| RegistrarError::Validation)?;
-        if let Some(existing) = env
-            .storage()
-            .persistent()
-            .get::<_, RegistrationRecord>(&DataKey::Registration(name.clone()))
-        {
-            if now_unix <= existing.grace_period_ends_at {
-                return Err(RegistrarError::AlreadyRegistered);
-            }
-        }
-
-        let record = RegistrationRecord {
-            name: name.clone(),
-            owner: owner.clone(),
-            registered_at: now_unix,
-            expires_at: quote.expiry_unix,
-            grace_period_ends_at: quote.grace_period_ends_at,
-            fee_paid: quote.fee_stroops,
-            renewed_at: now_unix,
-        };
-        env.storage()
-            .persistent()
-            .set(&DataKey::Registration(name.clone()), &record);
-
-        // Record this registration for rate limit tracking
+        execute_registration(&env, &label, &owner, years, max_price, now_unix)?;
         record_registration(&env, &owner, now_unix)?;
-
-        let treasury = env
-            .storage()
-            .persistent()
-            .get::<_, u64>(&DataKey::Treasury)
-            .unwrap_or(0);
-        env.storage().persistent().set(
-            &DataKey::Treasury,
-            &treasury.saturating_add(quote.fee_stroops),
-        );
-        let reg_count = env
-            .storage()
-            .persistent()
-            .get::<_, u64>(&DataKey::RegistrationCount)
-            .unwrap_or(0);
-        env.storage()
-            .persistent()
-            .set(&DataKey::RegistrationCount, &reg_count.saturating_add(1));
-
-        let registry: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Registry)
-            .ok_or(RegistrarError::NotInitialized)?;
-
-        env.invoke_contract::<()>(
-            &registry,
-            &Symbol::new(&env, "register"),
-            (
-                name,
-                owner.clone(),
-                Option::<String>::None,
-                Option::<String>::None,
-                now_unix,
-                record.expires_at,
-                record.grace_period_ends_at,
-            )
-                .into_val(&env),
-        );
-
-        env.events().publish(
-            (symbol_short!("registrar"), symbol_short!("reg")),
-            (
-                label,
-                owner,
-                quote.fee_stroops,
-                record.expires_at,
-                record.grace_period_ends_at,
-            ),
-        );
-
         Ok(())
+    }
+
+    /// Register up to [`MAX_BATCH_REGISTRATIONS`] names in one transaction.
+    ///
+    /// Each entry succeeds or fails independently. Rate limiting is evaluated
+    /// once up front using the total batch size per owner; an over-limit batch
+    /// (more than [`MAX_BATCH_REGISTRATIONS`] entries) aborts with
+    /// [`RegistrarError::Validation`], and a rate-limit violation aborts with
+    /// [`RegistrarError::RateLimitExceeded`].
+    #[allow(deprecated)]
+    pub fn batch_register(
+        env: Env,
+        registrations: Vec<BatchRegistration>,
+        now_unix: u64,
+    ) -> Vec<Result<(), RegistrarError>> {
+        if registrations.len() as u32 > MAX_BATCH_REGISTRATIONS {
+            panic_with_error!(&env, RegistrarError::Validation);
+        }
+
+        for reg in registrations.iter() {
+            reg.owner.require_auth();
+        }
+
+        if let Err(err) = check_rate_limit_batch(&env, &registrations, now_unix) {
+            panic_with_error!(&env, err);
+        }
+
+        let mut results = Vec::new(&env);
+        for reg in registrations.iter() {
+            let result = execute_registration(
+                &env,
+                &reg.label,
+                &reg.owner,
+                reg.years,
+                reg.max_price,
+                now_unix,
+            );
+            results.push_back(result);
+        }
+
+        if let Err(err) = record_registrations_batch(&env, &registrations, now_unix) {
+            panic_with_error!(&env, err);
+        }
+
+        results
     }
 
     #[allow(deprecated)]
@@ -977,6 +930,16 @@ pub fn set_rate_limit_config(env: Env, window_size_seconds: u64, max_registratio
 /// Check if an address is within rate limits for a given time window
 #[allow(deprecated)]
 fn check_rate_limit(env: &Env, address: &Address, now_unix: u64) -> Result<(), RegistrarError> {
+    check_rate_limit_with_increment(env, address, 1, now_unix)
+}
+
+#[allow(deprecated)]
+fn check_rate_limit_with_increment(
+    env: &Env,
+    address: &Address,
+    increment: u64,
+    now_unix: u64,
+) -> Result<(), RegistrarError> {
     // Check if address is whitelisted (bypass rate limit)
     if env
         .storage()
@@ -1003,7 +966,7 @@ fn check_rate_limit(env: &Env, address: &Address, now_unix: u64) -> Result<(), R
     let count = env.storage().persistent().get::<_, u64>(&key).unwrap_or(0);
 
     // Check if we've exceeded the limit
-    if count >= config.max_registrations_per_window {
+    if count.saturating_add(increment) > config.max_registrations_per_window {
         env.events().publish(
             (symbol_short!("registrar"), symbol_short!("limit")),
             (address.clone(), count),
@@ -1016,6 +979,15 @@ fn check_rate_limit(env: &Env, address: &Address, now_unix: u64) -> Result<(), R
 
 /// Record a registration for an address within the current window
 fn record_registration(env: &Env, address: &Address, now_unix: u64) -> Result<(), RegistrarError> {
+    record_registrations_with_increment(env, address, 1, now_unix)
+}
+
+fn record_registrations_with_increment(
+    env: &Env,
+    address: &Address,
+    increment: u64,
+    now_unix: u64,
+) -> Result<(), RegistrarError> {
     // Get rate limit config
     let config = env
         .storage()
@@ -1033,7 +1005,168 @@ fn record_registration(env: &Env, address: &Address, now_unix: u64) -> Result<()
 
     env.storage()
         .persistent()
-        .set(&key, &count.saturating_add(1));
+        .set(&key, &count.saturating_add(increment));
+
+    Ok(())
+}
+
+fn execute_registration(
+    env: &Env,
+    label: &String,
+    owner: &Address,
+    years: u64,
+    max_price: u64,
+    now_unix: u64,
+) -> Result<(), RegistrarError> {
+    validate_label_soroban(label).map_err(|_| RegistrarError::Validation)?;
+
+    if now_unix > now_unix.saturating_add(QUOTE_VALIDITY_SECONDS) {
+        return Err(RegistrarError::QuoteExpired);
+    }
+
+    validate_registration_years_soroban(years).map_err(|_| RegistrarError::Validation)?;
+
+    if env
+        .storage()
+        .persistent()
+        .get::<_, bool>(&DataKey::Reserved(label.clone()))
+        .unwrap_or(false)
+    {
+        return Err(RegistrarError::Reserved);
+    }
+
+    let quote = build_quote(env, label, years, now_unix);
+    if max_price < quote.fee_stroops {
+        return Err(RegistrarError::InsufficientFee);
+    }
+
+    if now_unix > quote.valid_until {
+        return Err(RegistrarError::QuoteExpired);
+    }
+
+    let name = build_xlm_name(env, label).map_err(|_| RegistrarError::Validation)?;
+    if let Some(existing) = env
+        .storage()
+        .persistent()
+        .get::<_, RegistrationRecord>(&DataKey::Registration(name.clone()))
+    {
+        if now_unix <= existing.grace_period_ends_at {
+            return Err(RegistrarError::AlreadyRegistered);
+        }
+    }
+
+    let record = RegistrationRecord {
+        name: name.clone(),
+        owner: owner.clone(),
+        registered_at: now_unix,
+        expires_at: quote.expiry_unix,
+        grace_period_ends_at: quote.grace_period_ends_at,
+        fee_paid: quote.fee_stroops,
+        renewed_at: now_unix,
+    };
+    env.storage()
+        .persistent()
+        .set(&DataKey::Registration(name.clone()), &record);
+
+    let treasury = env
+        .storage()
+        .persistent()
+        .get::<_, u64>(&DataKey::Treasury)
+        .unwrap_or(0);
+    env.storage().persistent().set(
+        &DataKey::Treasury,
+        &treasury.saturating_add(quote.fee_stroops),
+    );
+    let reg_count = env
+        .storage()
+        .persistent()
+        .get::<_, u64>(&DataKey::RegistrationCount)
+        .unwrap_or(0);
+    env.storage()
+        .persistent()
+        .set(&DataKey::RegistrationCount, &reg_count.saturating_add(1));
+
+    let registry: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Registry)
+        .ok_or(RegistrarError::NotInitialized)?;
+
+    env.invoke_contract::<()>(
+        &registry,
+        &Symbol::new(env, "register"),
+        (
+            name,
+            owner.clone(),
+            Option::<String>::None,
+            Option::<String>::None,
+            now_unix,
+            record.expires_at,
+            record.grace_period_ends_at,
+        )
+            .into_val(env),
+    );
+
+    env.events().publish(
+        (symbol_short!("registrar"), symbol_short!("reg")),
+        (
+            label.clone(),
+            owner.clone(),
+            quote.fee_stroops,
+            record.expires_at,
+            record.grace_period_ends_at,
+        ),
+    );
+
+    Ok(())
+}
+
+fn batch_count_for_owner(registrations: &Vec<BatchRegistration>, owner: &Address) -> u64 {
+    let mut count = 0u64;
+    for reg in registrations.iter() {
+        if reg.owner == *owner {
+            count = count.saturating_add(1);
+        }
+    }
+    count
+}
+
+fn check_rate_limit_batch(
+    env: &Env,
+    registrations: &Vec<BatchRegistration>,
+    now_unix: u64,
+) -> Result<(), RegistrarError> {
+    let mut seen_owners = Vec::new(env);
+    for reg in registrations.iter() {
+        if !seen_owners.contains(&reg.owner) {
+            seen_owners.push_back(reg.owner.clone());
+        }
+    }
+
+    for owner in seen_owners.iter() {
+        let batch_count = batch_count_for_owner(registrations, &owner);
+        check_rate_limit_with_increment(env, &owner, batch_count, now_unix)?;
+    }
+
+    Ok(())
+}
+
+fn record_registrations_batch(
+    env: &Env,
+    registrations: &Vec<BatchRegistration>,
+    now_unix: u64,
+) -> Result<(), RegistrarError> {
+    let mut seen_owners = Vec::new(env);
+    for reg in registrations.iter() {
+        if !seen_owners.contains(&reg.owner) {
+            seen_owners.push_back(reg.owner.clone());
+        }
+    }
+
+    for owner in seen_owners.iter() {
+        let batch_count = batch_count_for_owner(registrations, &owner);
+        record_registrations_with_increment(env, &owner, batch_count, now_unix)?;
+    }
 
     Ok(())
 }

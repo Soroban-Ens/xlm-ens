@@ -6,14 +6,15 @@ mod tests {
 
     use soroban_sdk::{
         testutils::{Address as _, Events as _},
-        Address, Env, String,
+        Address, Env, String, Vec,
     };
 
     use crate::expiry::{expiry_from_now, within_grace_period};
     use crate::pricing::price_for_label_length;
     use crate::{
-        can_renew, RegistrarContract, RegistrarContractClient, RegistrarError, RegistrationStatus,
-        DEFAULT_GRACE_PERIOD_SECONDS, GRACE_PERIOD_SECONDS,
+        can_renew, BatchRegistration, RegistrarContract, RegistrarContractClient, RegistrarError,
+        RegistrationStatus, DEFAULT_GRACE_PERIOD_SECONDS, GRACE_PERIOD_SECONDS,
+        MAX_BATCH_REGISTRATIONS,
     };
     use xlm_ns_registry::RegistryContract;
 
@@ -1169,6 +1170,303 @@ mod tests {
         );
     }
 
+    // ==================== Batch Registration Tests ====================
+
+    fn batch_entry(
+        env: &Env,
+        label: &str,
+        owner: &Address,
+        years: u64,
+        max_price: u64,
+    ) -> BatchRegistration {
+        BatchRegistration {
+            label: String::from_str(env, label),
+            owner: owner.clone(),
+            years,
+            max_price,
+        }
+    }
+
+    #[test]
+    fn batch_register_processes_full_batch_and_sums_fees() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        let owner = Address::generate(&env);
+        let now = 1_000u64;
+        let labels = ["pay", "wallet", "swap"];
+        let mut registrations = Vec::new(&env);
+        let mut expected_fee = 0u64;
+
+        for label in labels {
+            let label_str = String::from_str(&env, label);
+            let quote = client.quote_registration(&label_str, &1, &now);
+            expected_fee = expected_fee.saturating_add(quote.fee_stroops);
+            registrations.push_back(batch_entry(
+                &env,
+                label,
+                &owner,
+                1,
+                quote.fee_stroops,
+            ));
+        }
+
+        let results = client.batch_register(&registrations, &now);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results.get(0).unwrap(), Ok(()));
+        assert_eq!(results.get(1).unwrap(), Ok(()));
+        assert_eq!(results.get(2).unwrap(), Ok(()));
+
+        assert_eq!(client.fee_metrics().total_registrations, 3);
+        assert_eq!(client.treasury_balance(), expected_fee);
+        assert_eq!(client.get_registrations_in_window(&owner, &now), 3);
+        for label in labels {
+            assert!(!client.is_available(&String::from_str(&env, label), &now));
+        }
+    }
+
+    #[test]
+    fn batch_register_allows_partial_failures() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        let owner = Address::generate(&env);
+        let intruder = Address::generate(&env);
+        let now = 1_000u64;
+
+        let taken_label = String::from_str(&env, "taken");
+        let taken_quote = client.quote_registration(&taken_label, &1, &now);
+        client.register(
+            &taken_label,
+            &owner,
+            &1,
+            &taken_quote.fee_stroops,
+            &now,
+        );
+
+        let good_label = String::from_str(&env, "goodone");
+        let good_quote = client.quote_registration(&good_label, &1, &now);
+        let low_price_quote = client.quote_registration(&String::from_str(&env, "cheap"), &1, &now);
+
+        let registrations = Vec::from_array(
+            &env,
+            [
+                batch_entry(
+                    &env,
+                    "taken",
+                    &intruder,
+                    1,
+                    taken_quote.fee_stroops,
+                ),
+                batch_entry(&env, "INVALID!", &owner, 1, good_quote.fee_stroops),
+                batch_entry(
+                    &env,
+                    "cheap",
+                    &owner,
+                    1,
+                    low_price_quote.fee_stroops.saturating_sub(1),
+                ),
+                batch_entry(
+                    &env,
+                    "goodone",
+                    &owner,
+                    1,
+                    good_quote.fee_stroops,
+                ),
+            ],
+        );
+
+        let treasury_before = client.treasury_balance();
+        let results = client.batch_register(&registrations, &now);
+        assert_eq!(results.len(), 4);
+        assert_eq!(
+            results.get(0).unwrap(),
+            Err(Ok(RegistrarError::AlreadyRegistered))
+        );
+        assert_eq!(results.get(1).unwrap(), Err(Ok(RegistrarError::Validation)));
+        assert_eq!(
+            results.get(2).unwrap(),
+            Err(Ok(RegistrarError::InsufficientFee))
+        );
+        assert_eq!(results.get(3).unwrap(), Ok(()));
+
+        assert_eq!(client.fee_metrics().total_registrations, 2);
+        assert_eq!(
+            client.treasury_balance(),
+            treasury_before.saturating_add(good_quote.fee_stroops)
+        );
+        assert_eq!(client.get_registrations_in_window(&owner, &now), 4);
+        assert_eq!(client.get_registrations_in_window(&intruder, &now), 1);
+    }
+
+    #[test]
+    fn batch_register_rejects_over_limit_batch() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        let owner = Address::generate(&env);
+        let now = 1_000u64;
+        let mut registrations = Vec::new(&env);
+        for i in 0..=MAX_BATCH_REGISTRATIONS {
+            let label = format!("bulk{}", i);
+            let label_str = String::from_str(&env, &label);
+            let quote = client.quote_registration(&label_str, &1, &now);
+            registrations.push_back(batch_entry(
+                &env,
+                &label,
+                &owner,
+                1,
+                quote.fee_stroops,
+            ));
+        }
+
+        assert_eq!(
+            client.try_batch_register(&registrations, &now),
+            Err(Ok(RegistrarError::Validation))
+        );
+        assert_eq!(client.fee_metrics().total_registrations, 0);
+    }
+
+    #[test]
+    fn batch_register_accepts_max_batch_size() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        let owner = Address::generate(&env);
+        let now = 1_000u64;
+        let mut registrations = Vec::new(&env);
+        for i in 0..MAX_BATCH_REGISTRATIONS {
+            let label = format!("maxbatch{}", i);
+            let label_str = String::from_str(&env, &label);
+            let quote = client.quote_registration(&label_str, &1, &now);
+            registrations.push_back(batch_entry(
+                &env,
+                &label,
+                &owner,
+                1,
+                quote.fee_stroops,
+            ));
+        }
+
+        let results = client.batch_register(&registrations, &now);
+        assert_eq!(results.len(), MAX_BATCH_REGISTRATIONS as u32);
+        for i in 0..MAX_BATCH_REGISTRATIONS {
+            assert_eq!(results.get(i).unwrap(), Ok(()));
+        }
+        assert_eq!(
+            client.fee_metrics().total_registrations,
+            MAX_BATCH_REGISTRATIONS as u64
+        );
+    }
+
+    #[test]
+    fn batch_register_checks_rate_limit_for_total_batch_size() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        let owner = Address::generate(&env);
+        let now = 1_000u64;
+
+        for i in 0..4 {
+            let label = String::from_str(&env, &format!("prior{}", i));
+            let quote = client.quote_registration(&label, &1, &now);
+            client.register(&label, &owner, &1, &quote.fee_stroops, &now);
+        }
+        assert_eq!(client.get_registrations_in_window(&owner, &now), 4);
+
+        let mut registrations = Vec::new(&env);
+        for i in 0..2 {
+            let label = format!("batchrl{}", i);
+            let label_str = String::from_str(&env, &label);
+            let quote = client.quote_registration(&label_str, &1, &now);
+            registrations.push_back(batch_entry(
+                &env,
+                &label,
+                &owner,
+                1,
+                quote.fee_stroops,
+            ));
+        }
+
+        assert_eq!(
+            client.try_batch_register(&registrations, &now),
+            Err(Ok(RegistrarError::RateLimitExceeded))
+        );
+        assert_eq!(client.get_registrations_in_window(&owner, &now), 4);
+        assert_eq!(client.fee_metrics().total_registrations, 4);
+    }
+
+    #[test]
+    fn batch_register_counts_total_batch_size_after_partial_failures() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(RegistrarContract, ());
+        let client = RegistrarContractClient::new(&env, &contract_id);
+        let registry_id = env.register(RegistryContract, ());
+        client.initialize(&registry_id, &Address::generate(&env));
+
+        let owner = Address::generate(&env);
+        let now = 1_000u64;
+        let taken_label = String::from_str(&env, "dupe");
+        let taken_quote = client.quote_registration(&taken_label, &1, &now);
+        client.register(
+            &taken_label,
+            &owner,
+            &1,
+            &taken_quote.fee_stroops,
+            &now,
+        );
+
+        let good_label = String::from_str(&env, "unique");
+        let good_quote = client.quote_registration(&good_label, &1, &now);
+        let registrations = Vec::from_array(
+            &env,
+            [
+                batch_entry(
+                    &env,
+                    "dupe",
+                    &owner,
+                    1,
+                    taken_quote.fee_stroops,
+                ),
+                batch_entry(
+                    &env,
+                    "unique",
+                    &owner,
+                    1,
+                    good_quote.fee_stroops,
+                ),
+            ],
+        );
+
+        let results = client.batch_register(&registrations, &now);
+        assert_eq!(results.get(0).unwrap(), Err(Ok(RegistrarError::AlreadyRegistered)));
+        assert_eq!(results.get(1).unwrap(), Ok(()));
+        assert_eq!(client.get_registrations_in_window(&owner, &now), 3);
+    }
+
+    // ==================== Treasury Withdrawal Tests ====================
+
     #[test]
     fn treasury_withdrawal_flow() {
         let env = Env::default();
@@ -1209,7 +1507,8 @@ mod tests {
         assert!(matches!(
             result,
             Err(Ok(e)) if e == RegistrarError::TreasuryNotConfigured
-        ));    }
+        ));
+    }
 
     #[test]
     fn withdraw_fails_on_insufficient_balance() {
@@ -1228,5 +1527,6 @@ mod tests {
         assert!(matches!(
             result,
             Err(Ok(e)) if e == RegistrarError::InsufficientTreasuryBalance
-        ));    }
+        ));
+    }
 }
