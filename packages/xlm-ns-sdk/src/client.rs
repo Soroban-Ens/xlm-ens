@@ -4,13 +4,13 @@ use crate::errors::{ContractErrorCode, SdkError};
 use crate::network;
 use crate::types::{
     AddControllerRequest, AuctionCreateRequest, AuctionInfo, AuctionState, AuctionStatus,
-    AvailabilityResult, BidRequest, BridgeRoute, BuildMessageRequest, CreateSubdomainRequest,
-    FeeBreakdown, NameRecord, NftRecord, PortfolioPage, RegisterChainRequest,
-    RegisterParentRequest, RegistrarMetrics, RegistrationQuote, RegistrationReceipt,
-    RegistrationRequest, RegistrationStatus, RegistryEntry, RenewalReceipt, RenewalRequest,
-    ResolutionRecord, ResolutionResult, ReverseResolution, SimulationResult, Subdomain,
-    SubmissionStatus, TextRecord, TextRecordUpdate, TextRecordsUpdate, TransactionSubmission,
-    TransferRequest, TransferSubdomainRequest, DEFAULT_FEE_CURRENCY,
+    AvailabilityResult, BatchResolveError, BatchResult, BidRequest, BridgeRoute,
+    BuildMessageRequest, CreateSubdomainRequest, FeeBreakdown, NameRecord, NftRecord,
+    PortfolioPage, RegisterChainRequest, RegisterParentRequest, RegistrarMetrics,
+    RegistrationQuote, RegistrationReceipt, RegistrationRequest, RegistrationStatus, RegistryEntry,
+    RenewalReceipt, RenewalRequest, ResolutionRecord, ResolutionResult, ReverseResolution,
+    SimulationResult, Subdomain, SubmissionStatus, TextRecord, TextRecordUpdate, TextRecordsUpdate,
+    TransactionSubmission, TransferRequest, TransferSubdomainRequest, DEFAULT_FEE_CURRENCY,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;

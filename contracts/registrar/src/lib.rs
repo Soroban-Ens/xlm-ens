@@ -169,7 +169,7 @@ pub enum RegistrarError {
     TreasuryNotConfigured = 14,
     InsufficientTreasuryBalance = 15,
     // note: keep discriminant values unique; add new variants at end if needed
-    }
+}
 
 #[contract]
 pub struct RegistrarContract;
@@ -412,8 +412,16 @@ impl RegistrarContract {
             panic_with_error!(&env, RegistrarError::Validation);
         }
 
+        // Authorize each distinct owner once. Calling `require_auth` twice for
+        // the same address within a single invocation frame traps with
+        // `Auth, ExistingValue` ("frame is already authorized"), so a batch that
+        // repeats an owner must not re-authorize them.
+        let mut authorized: Vec<Address> = Vec::new(&env);
         for reg in registrations.iter() {
-            reg.owner.require_auth();
+            if !authorized.contains(&reg.owner) {
+                reg.owner.require_auth();
+                authorized.push_back(reg.owner.clone());
+            }
         }
 
         if let Err(err) = check_rate_limit_batch(&env, &registrations, now_unix) {
@@ -651,7 +659,9 @@ impl RegistrarContract {
             .get(&DataKey::Admin)
             .ok_or(RegistrarError::NotInitialized)?;
         admin.require_auth();
-        env.storage().instance().set(&DataKey::TreasuryAddress, &address);
+        env.storage()
+            .instance()
+            .set(&DataKey::TreasuryAddress, &address);
         Ok(())
     }
 
@@ -671,7 +681,11 @@ impl RegistrarContract {
             .instance()
             .get(&DataKey::TreasuryAddress)
             .ok_or(RegistrarError::TreasuryNotConfigured)?;
-        let balance = env.storage().persistent().get(&DataKey::Treasury).unwrap_or(0);
+        let balance = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Treasury)
+            .unwrap_or(0);
         if amount > balance {
             return Err(RegistrarError::InsufficientTreasuryBalance);
         }
@@ -689,29 +703,33 @@ impl RegistrarContract {
         .publish(&env);
         Ok(())
     }
-#[allow(deprecated)]
-pub fn set_rate_limit_config(env: Env, window_size_seconds: u64, max_registrations_per_window: u64) -> Result<(), RegistrarError> {
-    let admin: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::Admin)
-        .ok_or(RegistrarError::NotInitialized)?;
-    admin.require_auth();
-    let config = RateLimitConfig {
-        window_size_seconds,
-        max_registrations_per_window,
-    };
-    env.storage()
-        .persistent()
-        .set(&DataKey::RateLimitConfig, &config);
+    #[allow(deprecated)]
+    pub fn set_rate_limit_config(
+        env: Env,
+        window_size_seconds: u64,
+        max_registrations_per_window: u64,
+    ) -> Result<(), RegistrarError> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(RegistrarError::NotInitialized)?;
+        admin.require_auth();
+        let config = RateLimitConfig {
+            window_size_seconds,
+            max_registrations_per_window,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::RateLimitConfig, &config);
 
-    env.events().publish(
-        (symbol_short!("registrar"), symbol_short!("rate")),
-        (window_size_seconds, max_registrations_per_window),
-    );
+        env.events().publish(
+            (symbol_short!("registrar"), symbol_short!("rate")),
+            (window_size_seconds, max_registrations_per_window),
+        );
 
-    Ok(())
-}
+        Ok(())
+    }
 
     /// Governance function: Get current rate limit configuration
     pub fn get_rate_limit_config(env: Env) -> RateLimitConfig {
@@ -729,7 +747,10 @@ pub fn set_rate_limit_config(env: Env, window_size_seconds: u64, max_registratio
     /// Affects grace calculations for new registrations and renewals. Existing
     /// registrations keep their stored `grace_period_ends_at` timestamps.
     #[allow(deprecated)]
-    pub fn set_grace_period_impl(env: Env, grace_period_seconds: u64) -> Result<(), RegistrarError> {
+    pub fn set_grace_period_impl(
+        env: Env,
+        grace_period_seconds: u64,
+    ) -> Result<(), RegistrarError> {
         let admin: Address = env
             .storage()
             .instance()
@@ -907,7 +928,6 @@ pub fn set_rate_limit_config(env: Env, window_size_seconds: u64, max_registratio
 
         Ok(())
     }
-
 
     /// Check if an address is whitelisted
     #[allow(deprecated)]

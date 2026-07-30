@@ -34,6 +34,6 @@ pub use ingestion::{
     SupervisorStatus, TokioCaptiveCoreBackend,
 };
 pub use types::{
-    AvailabilityResult, RegisterResult, RegistrationReceipt, RegistrationStatus, RenewResult,
-    RenewalReceipt, SimulationResult,
+    AvailabilityResult, BatchResolveError, BatchResult, RegisterResult, RegistrationReceipt,
+    RegistrationStatus, RenewResult, RenewalReceipt, SimulationResult,
 };

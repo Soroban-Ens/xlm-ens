@@ -31,7 +31,7 @@ mod tests {
     use crate::errors::SdkError;
     use crate::network;
     use crate::types::{
-        RegistrationRequest, RegistrationStatus, RenewalRequest, SubmissionStatus,
+        BidRequest, RegistrationRequest, RegistrationStatus, RenewalRequest, SubmissionStatus,
         TextRecordUpdate, TextRecordsUpdate, TransferRequest,
     };
     use std::collections::HashMap;

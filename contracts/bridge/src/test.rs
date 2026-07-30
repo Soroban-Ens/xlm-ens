@@ -368,7 +368,7 @@ mod tests {
 
         let results = client.batch_build_messages(&name, &chains);
         assert_eq!(results.len(), 2);
-        
+
         let msg0 = results.get(0).unwrap().unwrap();
         let msg1 = results.get(1).unwrap().unwrap();
 

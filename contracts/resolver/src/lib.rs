@@ -1004,7 +1004,8 @@ fn reverse_lookup_matches_current_owner(env: &Env, name: &String, address: &Stri
         Some(r) => r,
         None => return false,
     };
-    if record.expires_at < env.ledger().timestamp() {
+    let expires_at = record.updated_at.saturating_add(record.ttl_seconds);
+    if expires_at < env.ledger().timestamp() {
         return false;
     }
 

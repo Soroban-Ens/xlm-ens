@@ -388,7 +388,9 @@ impl BridgeContract {
             panic!("Batch size exceeds maximum limit");
         }
         let mut results = Vec::new(&env);
-        let input_valid = !address.is_empty() && !primary_name.is_empty() && validate_fqdn_soroban(&primary_name).is_ok();
+        let input_valid = !address.is_empty()
+            && !primary_name.is_empty()
+            && validate_fqdn_soroban(&primary_name).is_ok();
 
         for chain in chains.iter() {
             if !input_valid {

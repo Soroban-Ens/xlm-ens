@@ -3,6 +3,9 @@ name = "xlm-ns-integration-tests"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+# `benches/storage_benchmarks.rs` is registered as a `[[test]]` below; disable
+# bench auto-discovery so it isn't also picked up as a duplicate bench target.
+autobenches = false
 
 [dev-dependencies]
 soroban-sdk = { version = "=26.0.0-rc.1", features = ["testutils"] }

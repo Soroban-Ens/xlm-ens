@@ -7,7 +7,10 @@ mod tests {
     use soroban_sdk::{testutils::Address as _, Address, Env, Map, String, Vec};
     use xlm_ns_common::{MAX_TEXT_RECORDS, MAX_TEXT_RECORD_VALUE_LENGTH};
 
-    use crate::{BatchOp, ResolverContract, ResolverContractClient, MAX_BATCH_OPS};
+    use crate::{
+        BatchOp, LegacyResolutionRecord, ResolverContract, ResolverContractClient, ResolverError,
+        DEFAULT_TTL_SECONDS, MAX_BATCH_OPS, MAX_TTL_SECONDS, MIN_TTL_SECONDS,
+    };
     use xlm_ns_registry::{RegistryContract, RegistryContractClient};
     use xlm_ns_subdomain::{SubdomainContract, SubdomainContractClient};
 

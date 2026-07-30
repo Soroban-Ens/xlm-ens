@@ -337,9 +337,7 @@ impl NftContract {
         spender.require_auth();
         let mut record = get_token(&env, &token_id)?;
         let is_operator = is_operator_approved(&env, &owner, &spender);
-        if record.owner != owner
-            || (record.approved.as_ref() != Some(&spender) && !is_operator)
-        {
+        if record.owner != owner || (record.approved.as_ref() != Some(&spender) && !is_operator) {
             return Err(NftError::Unauthorized);
         }
         record.owner = recipient.clone();

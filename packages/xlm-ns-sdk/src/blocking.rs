@@ -28,8 +28,8 @@ use crate::client::XlmNsClient;
 use crate::config::ClientConfig;
 use crate::errors::SdkError;
 use crate::types::{
-    AddControllerRequest, AuctionCreateRequest, AuctionInfo, AvailabilityResult, BidRequest,
-    BridgeRoute, BuildMessageRequest, CreateSubdomainRequest, NftRecord, PortfolioPage,
+    AddControllerRequest, AuctionCreateRequest, AuctionInfo, AvailabilityResult, BatchResult,
+    BidRequest, BridgeRoute, BuildMessageRequest, CreateSubdomainRequest, NftRecord, PortfolioPage,
     RegisterChainRequest, RegisterParentRequest, RegistrationQuote, RegistrationReceipt,
     RegistrationRequest, RenewalReceipt, RenewalRequest, ResolutionResult, ReverseResolution,
     TextRecord, TextRecordUpdate, TextRecordsUpdate, TransactionSubmission, TransferRequest,

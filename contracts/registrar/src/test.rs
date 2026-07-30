@@ -1206,13 +1206,7 @@ mod tests {
             let label_str = String::from_str(&env, label);
             let quote = client.quote_registration(&label_str, &1, &now);
             expected_fee = expected_fee.saturating_add(quote.fee_stroops);
-            registrations.push_back(batch_entry(
-                &env,
-                label,
-                &owner,
-                1,
-                quote.fee_stroops,
-            ));
+            registrations.push_back(batch_entry(&env, label, &owner, 1, quote.fee_stroops));
         }
 
         let results = client.batch_register(&registrations, &now);
@@ -1244,13 +1238,7 @@ mod tests {
 
         let taken_label = String::from_str(&env, "taken");
         let taken_quote = client.quote_registration(&taken_label, &1, &now);
-        client.register(
-            &taken_label,
-            &owner,
-            &1,
-            &taken_quote.fee_stroops,
-            &now,
-        );
+        client.register(&taken_label, &owner, &1, &taken_quote.fee_stroops, &now);
 
         let good_label = String::from_str(&env, "goodone");
         let good_quote = client.quote_registration(&good_label, &1, &now);
@@ -1259,13 +1247,7 @@ mod tests {
         let registrations = Vec::from_array(
             &env,
             [
-                batch_entry(
-                    &env,
-                    "taken",
-                    &intruder,
-                    1,
-                    taken_quote.fee_stroops,
-                ),
+                batch_entry(&env, "taken", &intruder, 1, taken_quote.fee_stroops),
                 batch_entry(&env, "INVALID!", &owner, 1, good_quote.fee_stroops),
                 batch_entry(
                     &env,
@@ -1274,13 +1256,7 @@ mod tests {
                     1,
                     low_price_quote.fee_stroops.saturating_sub(1),
                 ),
-                batch_entry(
-                    &env,
-                    "goodone",
-                    &owner,
-                    1,
-                    good_quote.fee_stroops,
-                ),
+                batch_entry(&env, "goodone", &owner, 1, good_quote.fee_stroops),
             ],
         );
 
@@ -1289,12 +1265,12 @@ mod tests {
         assert_eq!(results.len(), 4);
         assert_eq!(
             results.get(0).unwrap(),
-            Err(Ok(RegistrarError::AlreadyRegistered))
+            Err(RegistrarError::AlreadyRegistered)
         );
-        assert_eq!(results.get(1).unwrap(), Err(Ok(RegistrarError::Validation)));
+        assert_eq!(results.get(1).unwrap(), Err(RegistrarError::Validation));
         assert_eq!(
             results.get(2).unwrap(),
-            Err(Ok(RegistrarError::InsufficientFee))
+            Err(RegistrarError::InsufficientFee)
         );
         assert_eq!(results.get(3).unwrap(), Ok(()));
 
@@ -1323,19 +1299,13 @@ mod tests {
             let label = format!("bulk{}", i);
             let label_str = String::from_str(&env, &label);
             let quote = client.quote_registration(&label_str, &1, &now);
-            registrations.push_back(batch_entry(
-                &env,
-                &label,
-                &owner,
-                1,
-                quote.fee_stroops,
-            ));
+            registrations.push_back(batch_entry(&env, &label, &owner, 1, quote.fee_stroops));
         }
 
-        assert_eq!(
+        assert!(matches!(
             client.try_batch_register(&registrations, &now),
-            Err(Ok(RegistrarError::Validation))
-        );
+            Err(Ok(e)) if e == RegistrarError::Validation.into()
+        ));
         assert_eq!(client.fee_metrics().total_registrations, 0);
     }
 
@@ -1348,6 +1318,11 @@ mod tests {
         let registry_id = env.register(RegistryContract, ());
         client.initialize(&registry_id, &Address::generate(&env));
 
+        // The default rate limit (5/window) is below MAX_BATCH_REGISTRATIONS, so
+        // raise it enough to let the whole max-size batch through — this test
+        // exercises the batch-size ceiling, not the rate limit.
+        client.set_rate_limit_config(&86_400, &(MAX_BATCH_REGISTRATIONS as u64));
+
         let owner = Address::generate(&env);
         let now = 1_000u64;
         let mut registrations = Vec::new(&env);
@@ -1355,13 +1330,7 @@ mod tests {
             let label = format!("maxbatch{}", i);
             let label_str = String::from_str(&env, &label);
             let quote = client.quote_registration(&label_str, &1, &now);
-            registrations.push_back(batch_entry(
-                &env,
-                &label,
-                &owner,
-                1,
-                quote.fee_stroops,
-            ));
+            registrations.push_back(batch_entry(&env, &label, &owner, 1, quote.fee_stroops));
         }
 
         let results = client.batch_register(&registrations, &now);
@@ -1399,19 +1368,13 @@ mod tests {
             let label = format!("batchrl{}", i);
             let label_str = String::from_str(&env, &label);
             let quote = client.quote_registration(&label_str, &1, &now);
-            registrations.push_back(batch_entry(
-                &env,
-                &label,
-                &owner,
-                1,
-                quote.fee_stroops,
-            ));
+            registrations.push_back(batch_entry(&env, &label, &owner, 1, quote.fee_stroops));
         }
 
-        assert_eq!(
+        assert!(matches!(
             client.try_batch_register(&registrations, &now),
-            Err(Ok(RegistrarError::RateLimitExceeded))
-        );
+            Err(Ok(e)) if e == RegistrarError::RateLimitExceeded.into()
+        ));
         assert_eq!(client.get_registrations_in_window(&owner, &now), 4);
         assert_eq!(client.fee_metrics().total_registrations, 4);
     }
@@ -1429,38 +1392,23 @@ mod tests {
         let now = 1_000u64;
         let taken_label = String::from_str(&env, "dupe");
         let taken_quote = client.quote_registration(&taken_label, &1, &now);
-        client.register(
-            &taken_label,
-            &owner,
-            &1,
-            &taken_quote.fee_stroops,
-            &now,
-        );
+        client.register(&taken_label, &owner, &1, &taken_quote.fee_stroops, &now);
 
         let good_label = String::from_str(&env, "unique");
         let good_quote = client.quote_registration(&good_label, &1, &now);
         let registrations = Vec::from_array(
             &env,
             [
-                batch_entry(
-                    &env,
-                    "dupe",
-                    &owner,
-                    1,
-                    taken_quote.fee_stroops,
-                ),
-                batch_entry(
-                    &env,
-                    "unique",
-                    &owner,
-                    1,
-                    good_quote.fee_stroops,
-                ),
+                batch_entry(&env, "dupe", &owner, 1, taken_quote.fee_stroops),
+                batch_entry(&env, "unique", &owner, 1, good_quote.fee_stroops),
             ],
         );
 
         let results = client.batch_register(&registrations, &now);
-        assert_eq!(results.get(0).unwrap(), Err(Ok(RegistrarError::AlreadyRegistered)));
+        assert_eq!(
+            results.get(0).unwrap(),
+            Err(RegistrarError::AlreadyRegistered)
+        );
         assert_eq!(results.get(1).unwrap(), Ok(()));
         assert_eq!(client.get_registrations_in_window(&owner, &now), 3);
     }
